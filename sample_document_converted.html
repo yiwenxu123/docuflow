@@ -1,0 +1,113 @@
+<h1 id="docuflow-示例文档">DocuFlow 示例文档</h1>
+<p>这是一个用于测试 DocuFlow 文档转换器的示例 Markdown 文档。</p>
+<h2 id="功能特性">功能特性</h2>
+<p>DocuFlow 支持以下功能：</p>
+<ul>
+<li><strong>多格式转换</strong>: 支持 <code>.docx</code>,
+<code>.md</code>, <code>.pdf</code>, <code>.html</code>,
+<code>.epub</code> 等格式</li>
+<li><strong>批量处理</strong>: 可以同时转换多个文件</li>
+<li><strong>拖拽操作</strong>: 支持文件拖拽到应用窗口</li>
+<li><strong>自定义输出</strong>: 可设置输出目录和文件命名方式</li>
+</ul>
+<h2 id="支持的转换格式">支持的转换格式</h2>
+<table>
+<thead>
+<tr>
+<th>来源格式</th>
+<th>可转换为</th>
+<th>用途说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.docx</code></td>
+<td><code>.pdf</code>, <code>.md</code>, <code>.html</code></td>
+<td>报告、技术文档发布</td>
+</tr>
+<tr>
+<td><code>.md</code></td>
+<td><code>.docx</code>, <code>.pdf</code>, <code>.html</code></td>
+<td>技术写作、博客、发布</td>
+</tr>
+<tr>
+<td><code>.pdf</code></td>
+<td><code>.docx</code>, <code>.md</code></td>
+<td>正式文件编辑或摘录</td>
+</tr>
+<tr>
+<td><code>.html</code></td>
+<td><code>.md</code></td>
+<td>从网页提取内容</td>
+</tr>
+<tr>
+<td><code>.epub</code></td>
+<td><code>.md</code>, <code>.pdf</code></td>
+<td>笔记提取，归档打印</td>
+</tr>
+</tbody>
+</table>
+<h2 id="代码示例">代码示例</h2>
+<p>以下是一个简单的 Python 代码示例：</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> converter.document_converter <span class="im">import</span> DocumentConverter</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># 创建转换器实例</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>converter <span class="op">=</span> DocumentConverter()</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 转换文件</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>output_file <span class="op">=</span> converter.convert_file(</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&#39;input.md&#39;</span>, </span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&#39;.pdf&#39;</span>, </span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    output_dir<span class="op">=</span><span class="st">&#39;/path/to/output&#39;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f&quot;转换完成: </span><span class="sc">{</span>output_file<span class="sc">}</span><span class="ss">&quot;</span>)</span></code></pre></div>
+<h2 id="安装说明">安装说明</h2>
+<ol type="1">
+<li>确保已安装 Python 3.7+</li>
+<li>安装 Pandoc: <code>brew install pandoc</code></li>
+<li>运行安装脚本: <code>./install.sh</code></li>
+<li>启动应用: <code>./run_docuflow.sh</code></li>
+</ol>
+<h2 id="使用方法">使用方法</h2>
+<h3 id="图形界面">图形界面</h3>
+<ol type="1">
+<li>启动应用程序</li>
+<li>选择或拖拽文件到窗口</li>
+<li>选择输出格式</li>
+<li>点击”开始转换”</li>
+</ol>
+<h3 id="命令行">命令行</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 转换单个文件</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> cli_converter.py sample.md <span class="at">-f</span> .pdf</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 批量转换</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> cli_converter.py <span class="pp">*</span>.md <span class="at">-f</span> .html <span class="at">-o</span> ./output</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 保留原文件名</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> cli_converter.py document.docx <span class="at">-f</span> .pdf <span class="at">--keep-name</span></span></code></pre></div>
+<h2 id="技术架构">技术架构</h2>
+<p>DocuFlow 基于以下技术构建：</p>
+<ul>
+<li><strong>核心转换</strong>: Pandoc</li>
+<li><strong>GUI框架</strong>: PyQt5</li>
+<li><strong>编程语言</strong>: Python 3.7+</li>
+<li><strong>平台支持</strong>: macOS</li>
+</ul>
+<h2 id="注意事项">注意事项</h2>
+<blockquote>
+<p>⚠️ <strong>重要提示</strong>: PDF
+转换为其他格式时可能存在格式限制，转换效果取决于原始 PDF
+的结构复杂度。</p>
+</blockquote>
+<h2 id="联系我们">联系我们</h2>
+<p>如果您在使用过程中遇到问题，请：</p>
+<ol type="1">
+<li>查看 README.md 文档</li>
+<li>运行测试脚本: <code>python test_app.py</code></li>
+<li>检查 Pandoc 是否正确安装</li>
+</ol>
+<hr />
+<p><em>感谢使用 DocuFlow 文档转换器！</em></p>
