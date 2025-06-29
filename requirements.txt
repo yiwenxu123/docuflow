@@ -1,0 +1,15 @@
+# DocuFlow 依赖包列表
+
+# GUI框架
+PyQt5>=5.15.0
+
+# 可选依赖（用于特定功能）
+# python-docx>=0.8.11  # 用于更高级的docx处理
+# pypdf2>=3.0.0        # 用于PDF处理增强
+# beautifulsoup4>=4.11.0  # 用于HTML处理增强
+# lxml>=4.9.0          # XML/HTML解析器
+
+# 开发依赖（可选）
+# pytest>=7.0.0        # 测试框架
+# black>=22.0.0        # 代码格式化
+# flake8>=4.0.0        # 代码检查
