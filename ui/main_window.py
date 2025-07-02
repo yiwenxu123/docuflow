@@ -6,14 +6,27 @@ DocuFlow - 主窗口界面
 
 import os
 import sys
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QLabel, QComboBox, QLineEdit, QTextEdit, QProgressBar,
-    QFileDialog, QMessageBox, QListWidget, QListWidgetItem, QGroupBox,
-    QCheckBox, QSplitter, QFrame, QDialog, QDialogButtonBox, QStyledItemDelegate
-)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter, QFontMetrics
+
+try:
+    from PySide6.QtWidgets import (
+        QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+        QPushButton, QLabel, QComboBox, QLineEdit, QTextEdit, QProgressBar,
+        QFileDialog, QMessageBox, QListWidget, QListWidgetItem, QGroupBox,
+        QCheckBox, QSplitter, QFrame, QDialog, QDialogButtonBox, QStyledItemDelegate
+    )
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QPainter, QFontMetrics
+    QT_VERSION = "PySide6"
+except ImportError:
+    from PyQt5.QtWidgets import (
+        QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+        QPushButton, QLabel, QComboBox, QLineEdit, QTextEdit, QProgressBar,
+        QFileDialog, QMessageBox, QListWidget, QListWidgetItem, QGroupBox,
+        QCheckBox, QSplitter, QFrame, QDialog, QDialogButtonBox, QStyledItemDelegate
+    )
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QPainter, QFontMetrics
+    QT_VERSION = "PyQt5"
 
 class ComboBoxDelegate(QStyledItemDelegate):
     """自定义下拉菜单委托，用于显示选中项的对号"""
@@ -170,8 +183,12 @@ class FileListItem(QWidget):
     def delete_file(self):
         """删除文件"""
         self.parent_window.remove_file(self.file_path)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QIcon, QPixmap, QDragEnterEvent, QDropEvent
+if QT_VERSION == "PySide6":
+    from PySide6.QtCore import Qt, QThread, Signal as pyqtSignal, QTimer
+    from PySide6.QtGui import QFont, QIcon, QPixmap, QDragEnterEvent, QDropEvent
+else:
+    from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+    from PyQt5.QtGui import QFont, QIcon, QPixmap, QDragEnterEvent, QDropEvent
 from converter.document_converter import DocumentConverter
 from utils.file_utils import get_supported_formats, is_supported_file
 

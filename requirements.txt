@@ -1,15 +1,16 @@
 # DocuFlow 文档转换器依赖包
 
-# GUI框架
-PyQt5>=5.15.0
+# GUI (使用PySide6替换PyQt5)
+PySide6>=6.4.0
 
-# 可选依赖（用于特定功能）
-# python-docx>=0.8.11  # 用于更高级的docx处理
-# pypdf2>=3.0.0        # 用于PDF处理增强
-# beautifulsoup4>=4.11.0  # 用于HTML处理增强
-# lxml>=4.9.0          # XML/HTML解析器
+# 文档转换核心
+pdfplumber>=0.7.4
+python-docx>=0.8.11
+openpyxl>=3.0.10
+python-pptx>=0.6.21
+markdownify>=0.11.1
+pillow>=9.3.0
 
-# 开发依赖（可选）
-# pytest>=7.0.0        # 测试框架
-# black>=22.0.0        # 代码格式化
-# flake8>=4.0.0        # 代码检查
+# 开发与测试
+pytest>=7.2.0
+black>=22.10.0
