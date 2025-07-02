@@ -38,12 +38,13 @@ class FileSettings:
     """文件相关设置"""
     # 支持的输入格式
     supported_input_formats: Dict[str, FileFormat] = field(default_factory=lambda: {
-        '.pdf': FileFormat('.pdf', 'PDF文档 (.pdf)'),
-        '.docx': FileFormat('.docx', 'Word文档 (.docx)'),
-        '.xlsx': FileFormat('.xlsx', 'Excel表格 (.xlsx)'),
-        '.pptx': FileFormat('.pptx', 'PowerPoint演示文稿 (.pptx)'),
-        '.md': FileFormat('.md', 'Markdown文档 (.md)'),
-        '.txt': FileFormat('.txt', '纯文本文件 (.txt)'),
+        '.pdf': FileFormat('.pdf', 'PDF文档'),
+        '.docx': FileFormat('.docx', 'Word文档'),
+        '.xlsx': FileFormat('.xlsx', 'Excel表格'),
+        '.pptx': FileFormat('.pptx', 'PowerPoint演示文稿'),
+        '.md': FileFormat('.md', 'Markdown文档'),
+        '.html': FileFormat('.html', 'HTML文档'),
+        '.txt': FileFormat('.txt', '纯文本文档'),
     })
     
     # 支持的输出格式
@@ -62,6 +63,7 @@ class FileSettings:
         '.xlsx': ['.html', '.docx'],
         '.pptx': ['.pdf', '.docx'],
         '.md': ['.html', '.pdf', '.docx'],
+        '.html': ['.md', '.txt', '.pdf', '.docx'],
         '.txt': ['.md', '.html', '.docx'],
     })
 
@@ -144,6 +146,16 @@ class Config:
             filter_parts.append(f"{fmt.description} (*{ext})")
         
         return ";;" .join(filter_parts)
+    
+    @property
+    def SUPPORTED_CONVERSIONS(self) -> Dict[str, List[str]]:
+        """获取支持的转换格式映射"""
+        return self.files.conversion_matrix
+    
+    @property
+    def COMMAND_TIMEOUT(self) -> int:
+        """获取命令超时时间"""
+        return self.conversion.command_timeout
 
 # 全局配置实例
 config = Config()
