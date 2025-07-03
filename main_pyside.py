@@ -145,11 +145,30 @@ class DocuFlowGUI(QMainWindow):
         self.start_conversion_button.clicked.connect(self.start_conversion)
 
     def _setup_logging(self):
-        config.setup_logging()
+        # 清除现有的处理器，避免重复
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        
+        # 设置基本配置
+        logging.basicConfig(
+            level=config.logging.level,
+            format=config.logging.format,
+            handlers=[
+                logging.FileHandler(config.logging.file, encoding='utf-8'),
+                logging.StreamHandler()
+            ]
+        )
+        
+        # 添加GUI日志处理器
         log_formatter = logging.Formatter(config.logging.format)
         self.log_widget_handler.setFormatter(log_formatter)
-        logging.getLogger().addHandler(self.log_widget_handler)
-        logging.getLogger().setLevel(config.logging.level)
+        root_logger.addHandler(self.log_widget_handler)
+        
+        # 设置第三方库日志级别
+        logging.getLogger('PIL').setLevel(logging.WARNING)
+        logging.getLogger('pdfplumber').setLevel(logging.WARNING)
+        
         logger.info(f"{config.app.name} v{config.app.version} 已启动")
 
     def start_conversion(self):

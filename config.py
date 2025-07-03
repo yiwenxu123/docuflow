@@ -44,6 +44,7 @@ class FileSettings:
         '.xlsx': FileFormat('.xlsx', 'Excel表格'),
         '.pptx': FileFormat('.pptx', 'PowerPoint演示文稿'),
         '.md': FileFormat('.md', 'Markdown文档'),
+        '.html': FileFormat('.html', 'HTML文档'),
         '.txt': FileFormat('.txt', '纯文本文档'),
     })
 
@@ -63,6 +64,7 @@ class FileSettings:
         '.xlsx': ['.html', '.docx'],
         '.pptx': ['.pdf', '.docx'],
         '.md': ['.html', '.pdf', '.docx'],
+        '.html': ['.md', '.txt', '.pdf', '.docx'],
         '.txt': ['.md', '.html', '.docx'],
     })
 
