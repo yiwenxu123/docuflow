@@ -224,6 +224,138 @@ class DocumentConverter:
         
         return output_path
     
+    def _convert_html_to_clean_markdown(self, html_path, output_path):
+        """将HTML转换为清理后的Markdown（去除多余标记）"""
+        # 首先使用pandoc进行基本转换
+        temp_md_path = output_path + ".temp"
+        
+        cmd = ["pandoc", html_path, "-o", temp_md_path, "--wrap=none"]
+        
+        try:
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                check=False,
+                timeout=self.config.COMMAND_TIMEOUT
+            )
+            
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() or "未知错误"
+                raise ConversionError(
+                    f"Pandoc转换失败: {error_msg}",
+                    error_code="PANDOC_CONVERSION_FAILED"
+                )
+            
+            # 读取转换后的Markdown内容
+            with open(temp_md_path, 'r', encoding='utf-8') as f:
+                markdown_content = f.read()
+            
+            # 清理Markdown内容
+            cleaned_content = self._clean_markdown_content(markdown_content)
+            
+            # 写入最终输出文件
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(cleaned_content)
+            
+            # 删除临时文件
+            if os.path.exists(temp_md_path):
+                os.remove(temp_md_path)
+            
+            return output_path
+            
+        except subprocess.TimeoutExpired:
+            raise ConversionError(
+                f"转换超时（超过{self.config.COMMAND_TIMEOUT}秒）",
+                error_code="CONVERSION_TIMEOUT"
+            )
+    
+    def _clean_markdown_content(self, content):
+        """清理Markdown内容，去除多余的HTML标记和格式"""
+        # 去除HTML注释
+        content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+        
+        # 转换HTML标签为Markdown格式
+        # 处理段落标签
+        content = re.sub(r'</?p[^>]*>', '', content, flags=re.IGNORECASE)
+        
+        # 处理标题标签
+        content = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # 处理粗体和斜体
+        content = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # 处理代码块
+        content = re.sub(r'<pre[^>]*><code[^>]*>(.*?)</code></pre>', r'```\n\1\n```', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # 处理链接
+        content = re.sub(r'<a[^>]*href=["\']([^"\'>]*)["\'][^>]*>(.*?)</a>', r'[\2](\1)', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # 处理列表
+        content = re.sub(r'<ul[^>]*>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'</ul>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<ol[^>]*>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'</ol>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # 处理表格（简化处理）
+        content = re.sub(r'<table[^>]*>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'</table>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<thead[^>]*>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'</thead>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<tbody[^>]*>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'</tbody>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<tr[^>]*>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'</tr>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<th[^>]*>(.*?)</th>', r'| \1 ', content, flags=re.IGNORECASE | re.DOTALL)
+        content = re.sub(r'<td[^>]*>(.*?)</td>', r'| \1 ', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # 去除所有剩余的HTML标签
+        content = re.sub(r'<[^>]+>', '', content)
+        
+        # 处理HTML实体
+        content = content.replace('&quot;', '"')
+        content = content.replace('&amp;', '&')
+        content = content.replace('&lt;', '<')
+        content = content.replace('&gt;', '>')
+        content = content.replace('&nbsp;', ' ')
+        
+        # 清理多余的空行（超过2个连续空行压缩为2个）
+        content = re.sub(r'\n{3,}', '\n\n', content)
+        
+        # 清理行首行尾的空白字符
+        lines = content.split('\n')
+        cleaned_lines = [line.strip() for line in lines]
+        content = '\n'.join(cleaned_lines)
+        
+        # 移除多余的转义字符
+        content = re.sub(r'\\([^\\])', r'\1', content)
+        
+        # 清理多余的标记符号
+        content = re.sub(r'\*{3,}', '**', content)  # 多个星号压缩为两个
+        content = re.sub(r'_{3,}', '__', content)   # 多个下划线压缩为两个
+        
+        # 移除空的标题
+        content = re.sub(r'^#+\s*$', '', content, flags=re.MULTILINE)
+        
+        # 清理表格分隔符
+        content = re.sub(r'\|\s*\|', '|', content)
+        content = re.sub(r'^\|\s*$', '', content, flags=re.MULTILINE)
+        
+        # 最终清理：移除开头和结尾的空行
+        content = content.strip()
+        
+        return content
+    
     def can_convert(self, source_format: str, target_format: str) -> bool:
         """检查是否支持从源格式转换到目标格式
         
@@ -385,6 +517,10 @@ class DocumentConverter:
         # PDF转Markdown使用专门的处理方法
         if input_format.lower() == ".pdf" and output_format.lower() == ".md":
             return self._convert_pdf_to_markdown(input_path, output_path)
+        
+        # HTML转Markdown使用专门的处理方法（清理HTML标记）
+        if input_format.lower() in [".html", ".htm"] and output_format.lower() == ".md":
+            return self._convert_html_to_clean_markdown(input_path, output_path)
         
         # 准备pandoc命令
         cmd = ["pandoc", input_path, "-o", output_path]

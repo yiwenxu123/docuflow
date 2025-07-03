@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试HTML文档</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .highlight { background-color: yellow; padding: 5px; }
+        .sidebar { float: right; width: 200px; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="container" id="main-content">
+        <header class="page-header">
+            <h1 style="color: blue; font-size: 24px;">DocuFlow 测试文档</h1>
+            <nav class="navigation">
+                <ul style="list-style: none;">
+                    <li><a href="#section1">第一节</a></li>
+                    <li><a href="#section2">第二节</a></li>
+                </ul>
+            </nav>
+        </header>
+        
+        <div class="sidebar" id="sidebar">
+            <h3>侧边栏</h3>
+            <p>这是一些侧边栏内容</p>
+        </div>
+        
+        <main class="main-content">
+            <section id="section1">
+                <h2 class="section-title" style="color: red;">第一节：基本功能</h2>
+                <p class="intro-text">这是一个<span class="highlight">重要的</span>段落，包含了<strong>粗体文字</strong>和<em>斜体文字</em>。</p>
+                
+                <div class="code-block" style="background: #f5f5f5; padding: 10px;">
+                    <pre><code>def hello_world():
+    print("Hello, World!")</code></pre>
+                </div>
+                
+                <ul class="feature-list">
+                    <li>支持多种文档格式转换</li>
+                    <li>简单易用的界面</li>
+                    <li>高质量的转换结果</li>
+                </ul>
+            </section>
+            
+            <section id="section2">
+                <h2>第二节：高级功能</h2>
+                <p>DocuFlow 还提供了以下高级功能：</p>
+                
+                <table border="1" style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background-color: #e0e0e0;">
+                            <th>功能</th>
+                            <th>描述</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>批量转换</td>
+                            <td>一次性转换多个文件</td>
+                        </tr>
+                        <tr>
+                            <td>格式检测</td>
+                            <td>自动识别文件格式</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </main>
+        
+        <footer class="page-footer" style="margin-top: 50px; text-align: center;">
+            <p>&copy; 2024 DocuFlow. All rights reserved.</p>
+            <!-- 这是一个HTML注释，应该被清理掉 -->
+        </footer>
+    </div>
+    
+    <script>
+        // 这是一些JavaScript代码
+        console.log('页面加载完成');
+    </script>
+</body>
+</html>
