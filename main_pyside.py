@@ -31,6 +31,7 @@ class QTextEditLogger(logging.Handler):
 class ConversionWorker(QObject):
     conversion_finished = Signal(str)
     conversion_error = Signal(str)
+    conversion_completed = Signal(dict)  # 新增：传递完整的转换结果
 
     def __init__(self, files_to_convert, output_dir, output_format):
         super().__init__()
@@ -40,15 +41,42 @@ class ConversionWorker(QObject):
         self.output_format = output_format
 
     def run(self):
-        try:
-            converter = DocumentConverter()
-            for file_path in self.files_to_convert:
-                converter.convert_file(file_path, self.output_format, self.output_dir)
+        converter = DocumentConverter()
+        results = {
+            'successful': [],
+            'failed': [],
+            'errors': []
+        }
+        
+        for file_path in self.files_to_convert:
+            try:
+                output_file = converter.convert_file(file_path, self.output_format, self.output_dir)
+                if output_file:
+                    results['successful'].append({
+                        'input_file': file_path,
+                        'output_file': output_file
+                    })
+                else:
+                    results['failed'].append(file_path)
+                    results['errors'].append(f"{Path(file_path).name}: 转换失败")
+            except ConversionError as e:
+                results['failed'].append(file_path)
+                results['errors'].append(f"{Path(file_path).name}: {str(e)}")
+            except Exception as e:
+                results['failed'].append(file_path)
+                results['errors'].append(f"{Path(file_path).name}: 发生意外错误: {str(e)}")
+        
+        # 发出完整的转换结果
+        self.conversion_completed.emit(results)
+        
+        # 保持向后兼容性
+        if len(results['failed']) == 0:
             self.conversion_finished.emit("所有文件转换成功！")
-        except ConversionError as e:
-            self.conversion_error.emit(str(e))
-        except Exception as e:
-            self.conversion_error.emit(f"发生意外错误: {e}")
+        elif len(results['successful']) == 0:
+            self.conversion_error.emit("所有文件转换失败")
+        else:
+            # 部分成功的情况，通过conversion_completed信号处理
+            pass
 
 class DocuFlowGUI(QMainWindow):
     def __init__(self):
@@ -190,6 +218,7 @@ class DocuFlowGUI(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.worker.conversion_finished.connect(self.on_conversion_finished)
         self.worker.conversion_error.connect(self.on_conversion_error)
+        self.worker.conversion_completed.connect(self.on_conversion_completed)
 
         self.thread.start()
 
@@ -206,6 +235,106 @@ class DocuFlowGUI(QMainWindow):
         self.thread.quit()
         self.thread.wait()
         self.start_conversion_button.setEnabled(True)
+    
+    def on_conversion_completed(self, results):
+        """处理转换完成的详细结果"""
+        successful_count = len(results['successful'])
+        failed_count = len(results['failed'])
+        total_count = successful_count + failed_count
+        
+        if failed_count == 0:
+            # 全部成功，使用原有的成功处理逻辑
+            return
+        elif successful_count == 0:
+            # 全部失败，使用原有的错误处理逻辑
+            return
+        else:
+            # 部分成功，显示详细分析
+            self._show_conversion_analysis(results, successful_count, failed_count, total_count)
+        
+        self.thread.quit()
+        self.thread.wait()
+        self.start_conversion_button.setEnabled(True)
+    
+    def _show_conversion_analysis(self, results, successful_count, failed_count, total_count):
+        """显示转换结果分析"""
+        # 构建详细的分析消息
+        analysis_message = f"""转换完成！
+
+📊 转换统计：
+✅ 成功：{successful_count} 个文件
+❌ 失败：{failed_count} 个文件
+📁 总计：{total_count} 个文件
+
+❌ 失败文件列表："""
+        
+        # 添加失败文件列表
+        for failed_file in results['failed']:
+            file_name = Path(failed_file).name
+            analysis_message += f"\n• {file_name}"
+        
+        # 错误分析和建议
+        analysis_message += "\n\n🔍 错误分析："
+        error_categories = self._analyze_conversion_errors(results['errors'])
+        
+        for category, info in error_categories.items():
+            if info['count'] > 0:
+                analysis_message += f"\n\n{info['icon']} {category} ({info['count']} 个)："
+                analysis_message += f"\n   {info['suggestion']}"
+        
+        # 显示分析结果
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("转换结果分析")
+        msg_box.setText(analysis_message)
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.exec()
+        
+        logger.info(f"转换完成：成功 {successful_count} 个，失败 {failed_count} 个")
+    
+    def _analyze_conversion_errors(self, errors):
+        """分析转换错误并提供建议"""
+        categories = {
+            "文件损坏": {
+                "count": 0,
+                "icon": "🔧",
+                "suggestion": "请检查文件是否能正常打开，尝试用原软件修复后重新转换"
+            },
+            "权限问题": {
+                "count": 0,
+                "icon": "🔐",
+                "suggestion": "请检查文件是否被其他程序占用，或者您是否有足够的访问权限"
+            },
+            "格式不支持": {
+                "count": 0,
+                "icon": "📄",
+                "suggestion": "请确认文件格式是否受支持，或尝试转换为其他格式"
+            },
+            "编码问题": {
+                "count": 0,
+                "icon": "🔤",
+                "suggestion": "文件可能包含特殊字符，请尝试使用UTF-8编码保存后重新转换"
+            },
+            "其他错误": {
+                "count": 0,
+                "icon": "❓",
+                "suggestion": "请检查文件完整性，或联系技术支持获取帮助"
+            }
+        }
+        
+        for error in errors:
+            error_lower = error.lower()
+            if any(keyword in error_lower for keyword in ["损坏", "corrupt", "invalid"]):
+                categories["文件损坏"]["count"] += 1
+            elif any(keyword in error_lower for keyword in ["权限", "permission", "access", "占用"]):
+                categories["权限问题"]["count"] += 1
+            elif any(keyword in error_lower for keyword in ["格式", "format", "不支持", "unsupported"]):
+                categories["格式不支持"]["count"] += 1
+            elif any(keyword in error_lower for keyword in ["编码", "encoding", "字符", "character"]):
+                categories["编码问题"]["count"] += 1
+            else:
+                categories["其他错误"]["count"] += 1
+        
+        return categories
 
     def add_folder(self):
         directory = QFileDialog.getExistingDirectory(self, "选择文件夹")

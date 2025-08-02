@@ -65,6 +65,22 @@ brew install --cask mactex
 
 ### 运行应用
 
+**推荐方式（增强版启动器）**：
+```bash
+# 启动图形界面
+python run_enhanced.py gui
+
+# 命令行转换
+python run_enhanced.py convert input.md -f .html -o ./output
+
+# 批量转换
+python run_enhanced.py batch ./input_folder -f .pdf -o ./output
+
+# 运行测试
+python run_enhanced.py test --type all
+```
+
+**传统方式**：
 ```bash
 python main.py
 ```
@@ -92,17 +108,32 @@ python main.py
 
 ## 🔧 故障排除
 
+### 快速验证
+
+首先运行测试确保功能正常：
+```bash
+python run_enhanced.py test --type basic
+```
+
 ### GUI启动问题
 
 如果遇到 "Could not find the Qt platform plugin 'cocoa'" 错误：
 
-1. 使用提供的启动脚本：`./run_docuflow.sh`
-2. 或手动设置环境变量：
+1. **推荐**：使用增强版启动器：`python run_enhanced.py gui`
+2. 使用提供的启动脚本：`./run_docuflow.sh`
+3. 或手动设置环境变量：
    ```bash
    export QT_PLUGIN_PATH="$(pwd)/venv/lib/python3.13/site-packages/PyQt5/Qt5/plugins"
    source venv/bin/activate
    python main.py
    ```
+
+### 转换失败问题
+
+如果遇到 "ConversionError" 错误：
+1. 确保使用最新的启动器：`python run_enhanced.py`
+2. 运行完整测试：`python run_enhanced.py test --type all`
+3. 检查配置：`python run_enhanced.py config show`
 
 ### PDF转换问题
 
@@ -113,12 +144,21 @@ brew install --cask basictex
 brew install --cask mactex
 ```
 
-## 📋 未来计划
+## 📋 功能状态
 
-- 支持 `.md → .epub` 转换
+### ✅ 已实现功能
+- 多格式文档转换（PDF, DOCX, HTML, MD, EPUB, TXT）
+- 批量文件处理
+- 图形界面和命令行界面
+- 性能监控和缓存优化
+- 完整的测试套件（11个测试用例）
+- 配置管理系统
+
+### 🔄 未来计划
 - 多语言界面支持
 - 自定义转换模板和样式
 - 更多高级转换选项
+- Web界面支持
 
 ## 📄 许可证
 

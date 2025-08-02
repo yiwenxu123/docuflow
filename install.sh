@@ -23,20 +23,6 @@ if ! command -v pip3 &> /dev/null; then
 fi
 echo "✅ pip3 已安装"
 
-# 创建虚拟环境
-echo "📋 创建Python虚拟环境..."
-if [ -d "venv" ]; then
-    echo "⚠️  虚拟环境已存在，将重新创建"
-    rm -rf venv
-fi
-
-python3 -m venv venv
-if [ $? -ne 0 ]; then
-    echo "❌ 创建虚拟环境失败"
-    exit 1
-fi
-echo "✅ 虚拟环境创建成功"
-
 # 检查Homebrew
 echo "📋 检查Homebrew..."
 if ! command -v brew &> /dev/null; then
@@ -55,11 +41,9 @@ else
     echo "✅ Pandoc 已安装"
 fi
 
-# 激活虚拟环境并安装Python依赖
+# 安装Python依赖（全局安装）
 echo "📦 安装Python依赖包..."
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+pip3 install --user PyPDF2 pdfplumber python-docx openpyxl pandas PySide6 PyYAML pydantic
 
 if [ $? -eq 0 ]; then
     echo "✅ 依赖包安装成功"
@@ -68,21 +52,9 @@ else
     exit 1
 fi
 
-# 创建启动脚本
-echo "📝 创建启动脚本..."
-cat > run_docuflow.sh << 'EOF'
-#!/bin/bash
-cd "$(dirname "$0")"
-source venv/bin/activate
-python main.py
-EOF
-
-chmod +x run_docuflow.sh
-
-# 运行测试
+# 运行功能测试
 echo "📋 运行功能测试..."
-source venv/bin/activate
-python test_app.py
+python3 test_all_conversions.py
 
 if [ $? -eq 0 ]; then
     echo "✅ 功能测试通过"
@@ -90,11 +62,50 @@ else
     echo "⚠️  功能测试失败，但安装已完成"
 fi
 
+# 重新打包应用
+echo "📦 重新打包应用..."
+if [ -f "build_app.py" ]; then
+    echo "🔨 清理旧版本..."
+    rm -rf dist build
+    
+    echo "🔨 重新打包应用..."
+    python3 build_app.py
+    
+    if [ -d "dist/DocuFlow.app" ]; then
+        echo "🔧 修复应用权限和签名..."
+        # 清理扩展属性
+        xattr -cr dist/DocuFlow.app
+        
+        # 修复权限
+        chmod -R 755 dist/DocuFlow.app
+        
+        # 复制到用户应用目录
+        echo "📱 安装应用到启动台..."
+        cp -R dist/DocuFlow.app ~/Applications/
+        
+        # 重置启动台
+        defaults write com.apple.dock ResetLaunchPad -bool true
+        
+        echo "✅ 应用打包和安装完成"
+    else
+        echo "⚠️  应用打包失败，但核心功能可用"
+    fi
+else
+    echo "⚠️  未找到build_app.py，跳过应用打包"
+fi
+
 echo ""
 echo "🎉 安装完成！"
 echo "================================="
-echo "运行方式:"
-echo "1. 双击启动脚本: ./run_docuflow.sh"
-echo "2. 命令行方式: source venv/bin/activate && python main.py"
+echo "使用方法:"
+echo "1. 启动台应用: 在启动台中找到DocuFlow图标"
+echo "2. 命令行GUI: python3 main.py"
+echo "3. 命令行转换: python3 -c \"from converter.document_converter import DocumentConverter; dc = DocumentConverter(); dc.convert_file('input.pdf', '.md')\""
+echo "4. 测试功能: python3 test_all_conversions.py"
 echo ""
-echo "如果遇到问题，请查看 README.md 获取更多帮助"
+echo "支持的转换:"
+echo "• PDF → Markdown ✅"
+echo "• Excel → Markdown ✅"
+echo "• Word → Markdown ✅"
+echo ""
+echo "如果遇到问题，请查看 问题解决方案.md 获取更多帮助"

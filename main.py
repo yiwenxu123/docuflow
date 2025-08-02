@@ -33,7 +33,7 @@ except ImportError:
         print("错误：未找到可用的Qt库（PySide6或PyQt5）")
         sys.exit(1)
 
-from ui.main_window import MainWindow
+from ui.modern_main_window import ModernMainWindow
 
 def main():
     """主函数"""
@@ -54,8 +54,11 @@ def main():
     app.setApplicationName("DocuFlow")
     app.setApplicationVersion("1.0.0")
     
-    # 创建主窗口
-    window = MainWindow()
+    # 设置应用程序样式
+    app.setStyle('Fusion')  # 使用现代化样式
+    
+    # 创建现代化主窗口
+    window = ModernMainWindow()
     window.show()
     
     # 运行应用程序

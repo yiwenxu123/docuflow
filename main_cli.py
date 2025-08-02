@@ -152,6 +152,7 @@ def convert_batch_files():
     
     converter = DocumentConverter()
     success_count = 0
+    failed_files = []  # 记录失败的文件
     
     for i, file_path in enumerate(supported_files, 1):
         print(f"[{i}/{len(supported_files)}] 转换: {os.path.basename(file_path)}")
@@ -166,12 +167,55 @@ def convert_batch_files():
                 success_count += 1
             else:
                 print(f"  ✗ 失败: {error}")
+                failed_files.append((os.path.basename(file_path), error))
         
         except Exception as e:
-            print(f"  ✗ 错误: {str(e)}")
+            error_msg = str(e)
+            print(f"  ✗ 错误: {error_msg}")
+            failed_files.append((os.path.basename(file_path), error_msg))
     
-    print("-" * 40)
-    print(f"批量转换完成: {success_count}/{len(supported_files)} 个文件转换成功")
+    # 显示详细的转换结果
+    print("=" * 60)
+    total_files = len(supported_files)
+    failed_count = len(failed_files)
+    
+    if success_count == total_files:
+        # 全部成功
+        print(f"🎉 批量转换完成！")
+        print(f"✅ 成功转换了全部 {success_count} 个文件")
+        print(f"📁 输出目录: {output_dir}")
+    elif success_count > 0:
+        # 部分成功
+        print(f"⚠️  批量转换完成，但有部分文件转换失败")
+        print(f"✅ 成功转换: {success_count} 个文件")
+        print(f"❌ 转换失败: {failed_count} 个文件")
+        print(f"📁 输出目录: {output_dir}")
+        
+        if failed_files:
+            print(f"\n失败的文件列表:")
+            for i, (filename, error) in enumerate(failed_files, 1):
+                print(f"  {i}. {filename} - {error}")
+                if i >= 10 and len(failed_files) > 10:
+                    print(f"     ... 还有 {len(failed_files) - 10} 个失败文件")
+                    break
+    else:
+        # 全部失败
+        print(f"❌ 批量转换失败")
+        print(f"所有 {total_files} 个文件都转换失败")
+        print(f"\n失败原因分析:")
+        if failed_files:
+            for i, (filename, error) in enumerate(failed_files, 1):
+                print(f"  {i}. {filename} - {error}")
+                if i >= 5 and len(failed_files) > 5:
+                    print(f"     ... 还有 {len(failed_files) - 5} 个失败文件")
+                    break
+        print(f"\n建议检查:")
+        print(f"  • 文件格式是否为支持的类型")
+        print(f"  • 文件是否损坏或被占用")
+        print(f"  • 是否有足够的磁盘空间")
+        print(f"  • 是否安装了 pandoc 工具")
+    
+    print("=" * 60)
 
 def main():
     """主函数"""

@@ -87,7 +87,9 @@ class FileTypeFilterDialog(QDialog):
             '.md': 'Markdown (.md)',
             '.pdf': 'PDF文档 (.pdf)',
             '.html': 'HTML文件 (.html)',
-            '.epub': 'EPUB电子书 (.epub)'
+            '.epub': 'EPUB电子书 (.epub)',
+            '.xlsx': 'Excel表格 (.xlsx)',
+            '.xls': 'Excel表格 (.xls)'
         }
         
         for ext, desc in file_types.items():
@@ -542,7 +544,7 @@ class MainWindow(QMainWindow):
         """选择文件"""
         files, _ = QFileDialog.getOpenFileNames(
             self, "选择要转换的文件", "",
-            "支持的文件 (*.docx *.md *.pdf *.html *.epub);;Word文档 (*.docx);;Markdown (*.md);;PDF (*.pdf);;HTML (*.html);;EPUB (*.epub);;所有文件 (*)"
+            "支持的文件 (*.docx *.md *.pdf *.html *.epub *.xlsx *.xls);;Word文档 (*.docx);;Markdown (*.md);;PDF (*.pdf);;HTML (*.html);;EPUB (*.epub);;Excel表格 (*.xlsx *.xls);;所有文件 (*)"
         )
         if files:
             self.add_files(files)
@@ -679,12 +681,17 @@ class MainWindow(QMainWindow):
         self.convert_button.setEnabled(True)
         self.convert_button.setText("🚀 开始转换")
         
-        if converted_files:
-            # 显示完成对话框
+        total_files = len(self.selected_files)
+        success_count = len(converted_files)
+        failed_count = total_files - success_count
+        
+        # 构建详细的转换结果信息
+        if success_count > 0 and failed_count == 0:
+            # 全部成功
             msg = QMessageBox()
             msg.setWindowTitle("转换完成")
-            msg.setText(f"成功转换了 {len(converted_files)} 个文件！")
-            msg.setInformativeText("是否打开输出文件夹？")
+            msg.setText(f"✅ 批量转换完成！")
+            msg.setInformativeText(f"成功转换了全部 {success_count} 个文件\n\n是否打开输出文件夹？")
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             msg.setDefaultButton(QMessageBox.Yes)
             
@@ -692,8 +699,128 @@ class MainWindow(QMainWindow):
                 # 打开输出文件夹
                 output_dir = os.path.dirname(converted_files[0])
                 os.system(f'open "{output_dir}"')  # macOS
+                
+        elif success_count > 0 and failed_count > 0:
+            # 部分成功
+            msg = QMessageBox()
+            msg.setWindowTitle("转换完成（部分成功）")
+            msg.setText(f"⚠️ 批量转换完成，但有部分文件转换失败")
+            
+            # 分析失败原因并提供建议
+            error_analysis = self._analyze_conversion_errors()
+            
+            detailed_info = f"成功转换：{success_count} 个文件\n失败文件：{failed_count} 个文件\n\n"
+            detailed_info += error_analysis
+            detailed_info += "\n\n详细错误信息请查看下方结果区域。\n是否打开输出文件夹查看成功转换的文件？"
+            
+            msg.setInformativeText(detailed_info)
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.Yes)
+            
+            if msg.exec_() == QMessageBox.Yes and converted_files:
+                # 打开输出文件夹
+                output_dir = os.path.dirname(converted_files[0])
+                os.system(f'open "{output_dir}"')  # macOS
+                
         else:
-            QMessageBox.warning(self, "转换失败", "没有文件转换成功，请检查文件格式和错误信息。")
+            # 全部失败
+            msg = QMessageBox()
+            msg.setWindowTitle("转换失败")
+            msg.setText(f"❌ 批量转换失败")
+            
+            # 分析失败原因并提供建议
+            error_analysis = self._analyze_conversion_errors()
+            failure_info = f"所有 {total_files} 个文件都转换失败\n\n{error_analysis}\n\n详细错误信息请查看下方结果区域。"
+            
+            msg.setInformativeText(failure_info)
+            msg.setIcon(QMessageBox.Critical)
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
+    
+    def _analyze_conversion_errors(self) -> str:
+        """分析转换错误并提供针对性建议"""
+        result_text = self.result_text.toPlainText()
+        lines = result_text.split('\n')
+        
+        # 统计不同类型的错误
+        error_stats = {
+            'docx_corrupted': 0,  # DOCX文件损坏
+            'pdf_issues': 0,      # PDF相关问题
+            'permission_denied': 0, # 权限问题
+            'file_not_found': 0,   # 文件不存在
+            'format_unsupported': 0, # 格式不支持
+            'encoding_issues': 0,   # 编码问题
+            'other_errors': 0      # 其他错误
+        }
+        
+        failed_files = []
+        
+        for line in lines:
+            if line.startswith('❌'):
+                # 提取文件名和错误信息
+                parts = line.split(' - ', 1)
+                if len(parts) >= 2:
+                    file_name = parts[0].replace('❌ ', '')
+                    error_msg = parts[1].lower()
+                    failed_files.append(file_name)
+                    
+                    # 分类错误类型
+                    if 'docx' in error_msg and ('损坏' in error_msg or 'container' in error_msg):
+                        error_stats['docx_corrupted'] += 1
+                    elif 'pdf' in error_msg:
+                        error_stats['pdf_issues'] += 1
+                    elif '权限' in error_msg or 'permission' in error_msg:
+                        error_stats['permission_denied'] += 1
+                    elif '找不到' in error_msg or 'not found' in error_msg:
+                        error_stats['file_not_found'] += 1
+                    elif '不支持' in error_msg or 'not supported' in error_msg:
+                        error_stats['format_unsupported'] += 1
+                    elif '编码' in error_msg or 'encoding' in error_msg:
+                        error_stats['encoding_issues'] += 1
+                    else:
+                        error_stats['other_errors'] += 1
+        
+        # 生成分析报告
+        analysis = ""
+        suggestions = []
+        
+        # 显示失败文件列表（最多10个）
+        if failed_files:
+            analysis += "失败的文件：\n"
+            display_files = failed_files[:10]
+            analysis += "\n".join([f"• {f}" for f in display_files])
+            if len(failed_files) > 10:
+                analysis += f"\n... 还有 {len(failed_files) - 10} 个文件"
+            analysis += "\n\n"
+        
+        # 根据错误类型提供建议
+        if error_stats['docx_corrupted'] > 0:
+            suggestions.append(f"📄 {error_stats['docx_corrupted']} 个DOCX文件可能已损坏，请尝试用Word重新保存")
+        
+        if error_stats['pdf_issues'] > 0:
+            suggestions.append(f"📋 {error_stats['pdf_issues']} 个PDF文件有问题，可能是加密或扫描版PDF")
+        
+        if error_stats['permission_denied'] > 0:
+            suggestions.append(f"🔒 {error_stats['permission_denied']} 个文件权限不足，请检查文件是否被占用")
+        
+        if error_stats['file_not_found'] > 0:
+            suggestions.append(f"📁 {error_stats['file_not_found']} 个文件路径有问题，请确认文件存在")
+        
+        if error_stats['format_unsupported'] > 0:
+            suggestions.append(f"⚠️ {error_stats['format_unsupported']} 个文件格式不支持当前转换")
+        
+        if error_stats['encoding_issues'] > 0:
+            suggestions.append(f"🔤 {error_stats['encoding_issues']} 个文件编码有问题，建议保存为UTF-8")
+        
+        if error_stats['other_errors'] > 0:
+            suggestions.append(f"❓ {error_stats['other_errors']} 个文件出现其他错误")
+        
+        if suggestions:
+            analysis += "错误分析和建议：\n" + "\n".join(suggestions)
+        else:
+            analysis += "建议检查文件格式和完整性，确认是否为支持的文件类型。"
+        
+        return analysis
     
     def dragEnterEvent(self, event: QDragEnterEvent):
         """拖拽进入事件"""

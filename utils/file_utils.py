@@ -14,7 +14,9 @@ SUPPORTED_FORMATS = {
     '.pdf': 'PDF文档',
     '.html': 'HTML文档',
     '.htm': 'HTML文档',
-    '.epub': 'EPUB电子书'
+    '.epub': 'EPUB电子书',
+    '.xlsx': 'Excel表格',
+    '.xls': 'Excel表格'
 }
 
 # 格式转换支持矩阵
@@ -24,7 +26,9 @@ CONVERSION_MATRIX = {
     '.pdf': ['.docx', '.md', '.html'],
     '.html': ['.md', '.docx', '.pdf', '.epub'],
     '.htm': ['.md', '.docx', '.pdf', '.epub'],
-    '.epub': ['.md', '.pdf', '.docx', '.html']
+    '.epub': ['.md', '.pdf', '.docx', '.html'],
+    '.xlsx': ['.md', '.html', '.pdf'],
+    '.xls': ['.md', '.html', '.pdf']
 }
 
 def get_file_extension(file_path):
@@ -38,19 +42,16 @@ def get_file_extension(file_path):
     """
     return os.path.splitext(file_path)[1].lower()
 
-def is_supported_file(file_path):
-    """检查文件是否为支持的格式
+def is_supported_file(filename):
+    """检查文件名是否为支持的格式
     
     Args:
-        file_path: 文件路径
+        filename: 文件名
         
     Returns:
         bool: 是否支持
     """
-    if not os.path.isfile(file_path):
-        return False
-    
-    ext = get_file_extension(file_path)
+    ext = get_file_extension(filename)
     return ext in SUPPORTED_FORMATS
 
 def get_supported_formats():

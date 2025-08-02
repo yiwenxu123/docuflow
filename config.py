@@ -15,7 +15,7 @@ from typing import Dict, List, Set
 class AppInfo:
     """应用基本信息"""
     name: str = "DocuFlow"
-    version: str = "2.0.0"
+    version: str = "1.0.0"
     author: str = "DocuFlow Team"
     description: str = "高效的文档格式转换工具"
 
@@ -61,9 +61,10 @@ class FileSettings:
     conversion_matrix: Dict[str, List[str]] = field(default_factory=lambda: {
         '.pdf': ['.md', '.html', '.txt', '.docx'],
         '.docx': ['.md', '.html', '.txt', '.pdf'],
-        '.xlsx': ['.html', '.docx'],
+        '.xlsx': ['.html', '.docx', '.md', '.txt'],
+        '.xls': ['.html', '.docx', '.md', '.txt'],
         '.pptx': ['.pdf', '.docx'],
-        '.md': ['.html', '.pdf', '.docx'],
+        '.md': ['.html', '.pdf', '.docx', '.txt'],
         '.html': ['.md', '.txt', '.pdf', '.docx'],
         '.txt': ['.md', '.html', '.docx'],
     })

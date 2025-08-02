@@ -1,0 +1,111 @@
+{
+  "core_functionality": {
+    "dependencies": {
+      "status": "warning",
+      "missing": [
+        "python-docx"
+      ]
+    },
+    "conversions": {
+      "docx_to_md": {
+        "status": "success",
+        "time": 0.53,
+        "output_size": 60
+      },
+      "docx_to_html": {
+        "status": "success",
+        "time": 0.18,
+        "output_size": 3885
+      },
+      "md_to_html": {
+        "status": "success",
+        "time": 0.1,
+        "output_size": 4005
+      },
+      "md_to_docx": {
+        "status": "success",
+        "time": 0.08,
+        "output_size": 10887
+      },
+      "html_to_md": {
+        "status": "success",
+        "time": 0.06,
+        "output_size": 78
+      },
+      "html_to_docx": {
+        "status": "success",
+        "time": 0.09,
+        "output_size": 10843
+      },
+      "xlsx_to_md": {
+        "status": "success",
+        "time": 0.01,
+        "output_size": 219
+      }
+    }
+  },
+  "web_interface": {
+    "server_status": {
+      "status": "success",
+      "message": "Web服务器运行正常"
+    },
+    "upload_conversion": {
+      "status": "success",
+      "message": "文件上传和转换功能正常"
+    }
+  },
+  "file_support": {
+    "input_.docx": {
+      "supported": true,
+      "status": "success"
+    },
+    "input_.md": {
+      "supported": true,
+      "status": "success"
+    },
+    "input_.html": {
+      "supported": true,
+      "status": "success"
+    },
+    "input_.htm": {
+      "supported": true,
+      "status": "success"
+    },
+    "input_.pdf": {
+      "supported": true,
+      "status": "success"
+    },
+    "input_.xlsx": {
+      "supported": true,
+      "status": "success"
+    },
+    "input_.xls": {
+      "supported": true,
+      "status": "success"
+    }
+  },
+  "performance": {
+    "large_file_conversion": {
+      "status": "success",
+      "input_size_kb": 36.41,
+      "output_size_kb": 30.39,
+      "conversion_time_seconds": 0.22,
+      "speed_kb_per_second": 166.5
+    }
+  },
+  "error_handling": {
+    "tests": [
+      {
+        "test": "invalid_file_handling",
+        "status": "success",
+        "message": "正确抛出异常: [PANDOC_CONVERSION_FAILED] DOCX文件可能已损坏或格式不正确，请检查文件"
+      },
+      {
+        "test": "nonexistent_file_handling",
+        "status": "success",
+        "message": "正确处理不存在的文件: [FILE_NOT_FOUND] 源文件不存在: /path/to/nonexistent/file"
+      }
+    ]
+  },
+  "overall_status": "good"
+}
