@@ -6,6 +6,7 @@ DocuFlow Web 版本 - 文档转换器
 """
 
 import os
+import re
 import sys
 import logging
 from pathlib import Path
@@ -24,8 +25,29 @@ from exceptions import ConversionError, ValidationError
 from utils.file_utils import get_supported_formats, is_supported_file
 
 app = Flask(__name__)
-app.secret_key = 'docuflow_secret_key_2024'
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+# 密钥从环境变量读取，避免硬编码；无配置时使用随机密钥（重启后会话失效，不影响功能）
+app.secret_key = os.environ.get('DOCUFLOW_SECRET_KEY', os.urandom(24).hex())
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('DOCUFLOW_MAX_UPLOAD_MB', 100)) * 1024 * 1024
+
+# 可选访问令牌（局域网共享时建议设置 DOCUFLOW_ACCESS_TOKEN）
+ACCESS_TOKEN = os.environ.get('DOCUFLOW_ACCESS_TOKEN', '')
+
+
+@app.before_request
+def check_access_token():
+    """设置了 DOCUFLOW_ACCESS_TOKEN 时，所有请求需携带令牌"""
+    if not ACCESS_TOKEN:
+        return None
+    # 放行静态资源
+    if request.path.startswith('/static'):
+        return None
+    token = request.headers.get('X-Access-Token') or request.args.get('token')
+    if token == ACCESS_TOKEN:
+        return None
+    if request.method == 'GET' and request.path == '/':
+        # 首页允许访问，用于提示需要令牌
+        return None
+    return jsonify({'error': '需要访问令牌（X-Access-Token）'}), 401
 
 # 全局变量
 config = Config()

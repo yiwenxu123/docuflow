@@ -48,9 +48,7 @@ class DocumentConverter(
             config_obj: 配置对象，如果为None则使用默认配置
         """
         if config_obj is None:
-            from utils.config_manager import ConfigManager
-            config_manager = ConfigManager()
-            self.config = config_manager.get_config()
+            self.config = config
         else:
             self.config = config_obj
         self.logger = logging.getLogger(__name__)

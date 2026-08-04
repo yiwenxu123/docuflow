@@ -303,12 +303,96 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "部分成功", 
                               f"成功转换 {successful_count} 个文件，\n"
                               f"失败 {failed_count} 个文件")
+            # 有失败时显示详细分析
+            self._show_conversion_analysis(
+                results, successful_count, failed_count, len(results['successful']) + failed_count
+            )
         
         # 显示详细错误信息
         if results['errors']:
             logger.error("转换错误详情：")
             for error in results['errors']:
                 logger.error(error)
+
+    def _show_conversion_analysis(self, results, successful_count, failed_count, total_count):
+        """显示转换结果分析"""
+        # 构建详细的分析消息
+        analysis_message = f"""转换完成！
+
+📊 转换统计：
+✅ 成功：{successful_count} 个文件
+❌ 失败：{failed_count} 个文件
+📁 总计：{total_count} 个文件
+
+❌ 失败文件列表："""
+        
+        # 添加失败文件列表
+        for failed_file in results['failed']:
+            file_name = Path(failed_file).name
+            analysis_message += f"\n• {file_name}"
+        
+        # 错误分析和建议
+        analysis_message += "\n\n🔍 错误分析："
+        error_categories = self._analyze_conversion_errors(results['errors'])
+        
+        for category, info in error_categories.items():
+            if info['count'] > 0:
+                analysis_message += f"\n\n{info['icon']} {category} ({info['count']} 个)："
+                analysis_message += f"\n   {info['suggestion']}"
+        
+        # 显示分析结果
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("转换结果分析")
+        msg_box.setText(analysis_message)
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.exec()
+        
+        logger.info(f"转换完成：成功 {successful_count} 个，失败 {failed_count} 个")
+
+    def _analyze_conversion_errors(self, errors):
+        """分析转换错误并提供建议"""
+        categories = {
+            "文件损坏": {
+                "count": 0,
+                "icon": "🔧",
+                "suggestion": "请检查文件是否能正常打开，尝试用原软件修复后重新转换"
+            },
+            "权限问题": {
+                "count": 0,
+                "icon": "🔐",
+                "suggestion": "请检查文件是否被其他程序占用，或者您是否有足够的访问权限"
+            },
+            "格式不支持": {
+                "count": 0,
+                "icon": "📄",
+                "suggestion": "请确认文件格式是否受支持，或尝试转换为其他格式"
+            },
+            "编码问题": {
+                "count": 0,
+                "icon": "🔤",
+                "suggestion": "文件可能包含特殊字符，请尝试使用UTF-8编码保存后重新转换"
+            },
+            "其他错误": {
+                "count": 0,
+                "icon": "❓",
+                "suggestion": "请检查文件完整性，或联系技术支持获取帮助"
+            }
+        }
+        
+        for error in errors:
+            error_lower = error.lower()
+            if any(keyword in error_lower for keyword in ["损坏", "corrupt", "invalid"]):
+                categories["文件损坏"]["count"] += 1
+            elif any(keyword in error_lower for keyword in ["权限", "permission", "access", "占用"]):
+                categories["权限问题"]["count"] += 1
+            elif any(keyword in error_lower for keyword in ["格式", "format", "不支持", "unsupported"]):
+                categories["格式不支持"]["count"] += 1
+            elif any(keyword in error_lower for keyword in ["编码", "encoding", "字符", "character"]):
+                categories["编码问题"]["count"] += 1
+            else:
+                categories["其他错误"]["count"] += 1
+        
+        return categories
 
     def on_conversion_finished(self, message):
         """转换成功 - 已废弃，避免重复通知"""
