@@ -67,3 +67,17 @@ test_output/
 *.pdf
 *.epub
 !sample_document.*
+
+# Local tools & agent artifacts
+.trae/
+.minimax/
+.install_complete
+.setup_cache.json
+.vercel/
+
+# User working files (not part of the project)
+llm-wiki_*.md
+测试.md
+macOS安装指南.md
+clean_filtered_file.py
+temp/

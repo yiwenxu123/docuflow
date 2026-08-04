@@ -1,169 +1,158 @@
-# DocuFlow 文档转换器
+# DocuFlow 文档转换工具 🎯
 
-## 📝 项目简介
+## ✅ 终极解决方案 - 双击即用
 
-DocuFlow 是一款专为 macOS 设计的文档格式转换工具，提供简洁直观的图形界面，帮助用户高效完成常见办公和学习文档格式的转换任务，特别是在 Markdown 与传统格式之间的双向流转。
+### 🚀 推荐启动方式
+**双击 `DocuFlow-终极启动器.command`** - 一键解决所有启动问题！
 
-## ✨ 主要特性
+### 🎯 新功能特性
+- ✅ **全自动安装**：Homebrew + pandoc + Python依赖
+- ✅ **智能检测**：自动识别系统环境
+- ✅ **国内镜像**：使用清华镜像源，安装更快
+- ✅ **详细日志**：完整安装过程记录
+- ✅ **错误恢复**：提供多种备选方案
 
-- **多格式支持**：支持 `.docx`, `.md`, `.pdf`, `.html`, `.epub` 等常用格式的相互转换
-- **批量处理**：支持多文件和文件夹批量转换
-- **拖拽操作**：支持文件拖拽，操作更便捷
-- **自定义输出**：可自定义输出目录和文件命名方式
-- **实时反馈**：转换过程中提供实时状态和进度反馈
+### 📋 支持的格式转换
+| 输入格式 | 可转输出格式 |
+|----------|-------------|
+| **PDF** → | Markdown, TXT, HTML, DOCX |
+| **DOCX** → | PDF, HTML, Markdown, EPUB |
+| **Excel** → | HTML, DOCX, Markdown |
+| **PPTX** → | PDF, HTML, Markdown |
+| **Markdown** → | PDF, DOCX, HTML, EPUB |
+| **HTML** → | PDF, DOCX, Markdown |
 
-## 🔧 支持的转换格式
+## 🖥️ 三种使用方式
 
-| 来源格式 | 可转换为 | 用途说明 |
-|---------|---------|--------|
-| `.docx` | `.pdf`, `.md`, `.html` | 报告、技术文档发布 |
-| `.md` | `.docx`, `.pdf`, `.html` | 技术写作、博客、发布 |
-| `.pdf` | `.docx`, `.md`（结构受限） | 正式文件编辑或摘录 |
-| `.html` | `.md` | 从网页提取内容 |
-| `.epub` | `.md`, `.pdf` | 笔记提取，归档打印 |
-
-## 🚀 安装与使用
-
-### 系统要求
-
-- macOS 10.14 或更高版本
-- Python 3.7 或更高版本
-- [Pandoc](https://pandoc.org/installing.html) (用于文档转换)
-
-### 安装步骤
-
-1. 克隆或下载本仓库
-
+#### 1. ⚡ 极速启动器（强烈推荐）
 ```bash
-git clone https://github.com/yourusername/docuflow.git
-cd docuflow
+双击：DocuFlow-极速启动器.command
 ```
+**特点**：首次安装后，后续启动仅需2-3秒，智能缓存，一键桌面
 
-2. 安装依赖包
-
+#### 2. 🎯 创建桌面快捷方式
 ```bash
-pip install -r requirements.txt
+双击：创建桌面快捷方式.command
 ```
+**特点**：创建美观桌面图标，支持启动台和Dock栏
 
-3. 安装 Pandoc (如果尚未安装)
-
+#### 3. 💻 命令行工具
 ```bash
-brew install pandoc
-```
-
-4. 可选：安装 LaTeX (用于PDF转换)
-
-```bash
-# 安装 BasicTeX (较小的LaTeX发行版)
-brew install --cask basictex
-
-# 或者安装完整的 MacTeX
-brew install --cask mactex
-```
-
-**注意**: 如果不安装LaTeX，PDF转换功能将不可用，但其他格式转换(HTML, DOCX等)仍然正常工作。
-
-### 运行应用
-
-**推荐方式（增强版启动器）**：
-```bash
-# 启动图形界面
-python run_enhanced.py gui
-
-# 命令行转换
-python run_enhanced.py convert input.md -f .html -o ./output
+# 转换单个文件
+./venv/bin/python3 cli.py input.pdf -o output.md
 
 # 批量转换
-python run_enhanced.py batch ./input_folder -f .pdf -o ./output
+./venv/bin/python3 cli.py *.pdf -f md -o output_dir/
 
-# 运行测试
-python run_enhanced.py test --type all
+# 查看帮助
+./venv/bin/python3 cli.py --help
 ```
 
-**传统方式**：
+#### 4. 🌐 Web界面
 ```bash
-python main.py
+./venv/bin/python3 main_web.py
+# 访问 http://localhost:5003
 ```
 
-## 📖 使用指南
+#### 5. 🧠 知识库管道（LLM/RAG 友好）
+把文档集一键转换为**干净 Markdown + 结构化分块（JSONL）**，可直接喂给 LLM/RAG 知识库：
 
-1. 启动应用后，可以通过以下方式添加文件：
-   - 点击「选择文件」按钮
-   - 点击「选择文件夹」按钮
-   - 直接将文件拖拽到应用窗口
-
-2. 从下拉菜单中选择目标格式
-
-3. 可选：设置输出目录和文件命名选项
-
-4. 点击「开始转换」按钮
-
-5. 转换完成后，可以查看结果并打开输出文件夹
-
-## 🛠️ 技术依赖
-
-- **Pandoc**：强大的文档转换工具
-- **Python + PyQt5**：提供跨平台GUI支持
-- **可选**：`ebook-convert`（Calibre 工具，用于增强 epub 支持）
-
-## 🔧 故障排除
-
-### 快速验证
-
-首先运行测试确保功能正常：
 ```bash
-python run_enhanced.py test --type basic
+# 处理文件夹（递归扫描 pdf/docx/xlsx/html/md）
+./venv/bin/python3 kb_cli.py process ~/Documents/sources ~/kb_out
+
+# 优先使用 MarkItDown（高质量 LLM 输出）
+./venv/bin/python3 kb_cli.py process ~/sources ~/kb_out --markitdown
+
+# 仅对已有 Markdown 目录分块
+./venv/bin/python3 kb_cli.py chunk ~/kb_out/md ~/kb_out/chunks.jsonl
+
+# 自定义块大小与重叠
+./venv/bin/python3 kb_cli.py process ~/sources ~/kb_out --chunk-size 800 --overlap 100
 ```
 
-### GUI启动问题
+**输出**：
+- `md/`：转换后的干净 Markdown（按标题清理 Gist/HTML 残留）
+- `chunks.jsonl`：语义分块（按标题层级切分，保留"父标题 > 子标题"上下文与相邻块重叠），每条含 `id/source/title/section/chunk_index/text` 元数据
+- `manifest.json`：处理统计与失败清单
 
-如果遇到 "Could not find the Qt platform plugin 'cocoa'" 错误：
+#### 6. 🔍 向量检索（本地语义搜索）
+对知识库构建向量索引并语义检索（零依赖，本地隐私）：
 
-1. **推荐**：使用增强版启动器：`python run_enhanced.py gui`
-2. 使用提供的启动脚本：`./run_docuflow.sh`
-3. 或手动设置环境变量：
-   ```bash
-   export QT_PLUGIN_PATH="$(pwd)/venv/lib/python3.13/site-packages/PyQt5/Qt5/plugins"
-   source venv/bin/activate
-   python main.py
-   ```
-
-### 转换失败问题
-
-如果遇到 "ConversionError" 错误：
-1. 确保使用最新的启动器：`python run_enhanced.py`
-2. 运行完整测试：`python run_enhanced.py test --type all`
-3. 检查配置：`python run_enhanced.py config show`
-
-### PDF转换问题
-
-如果PDF转换失败，请安装LaTeX：
 ```bash
-brew install --cask basictex
-# 或
-brew install --cask mactex
+# 构建向量索引（默认 auto：有 API key 用高质量 Embedding，否则本地离线引擎）
+./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector
+
+# 语义检索
+./venv/bin/python3 kb_cli.py search "知识库的核心理念" ~/kb_out/.vector --top-k 5
+
+# 按来源文件过滤
+./venv/bin/python3 kb_cli.py search "查询" ~/kb_out/.vector --source llm-wiki
+
+# 使用 OpenAI 兼容 API（OpenAI / DashScope 通义）获得高质量检索
+export DASHSCOPE_API_KEY=sk-xxx        # 或 OPENAI_API_KEY
+./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector --engine openai
+./venv/bin/python3 kb_cli.py search "..." ~/kb_out/.vector --engine openai
+
+# 强制本地离线引擎（不调用任何 API）
+./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector --engine hash
 ```
 
-## 📋 功能状态
+**说明**：
+- `--engine auto`（默认）：检测到 `OPENAI_API_KEY`/`DASHSCOPE_API_KEY` 时用 API Embedding，否则用本地哈希引擎（离线可用）
+- API 调用失败（欠费/网络）时**自动降级**为本地引擎，索引不中断
+- DashScope 默认模型 `text-embedding-v3`，OpenAI 默认 `text-embedding-3-small`，可用 `OPENAI_EMBEDDING_MODEL` 或 `OPENAI_BASE_URL` 覆盖
 
-### ✅ 已实现功能
-- 多格式文档转换（PDF, DOCX, HTML, MD, EPUB, TXT）
-- 批量文件处理
-- 图形界面和命令行界面
-- 性能监控和缓存优化
-- 完整的测试套件（11个测试用例）
-- 配置管理系统
+## 📦 系统要求（自动安装）
+- ✅ **macOS 10.15+**（自动检测）
+- ✅ **Homebrew**（自动安装）
+- ✅ **Python 3.8+**（自动配置）
+- ✅ **Pandoc**（自动安装）
+- ✅ **所有Python依赖**（自动安装）
 
-### 🔄 未来计划
-- 多语言界面支持
-- 自定义转换模板和样式
-- 更多高级转换选项
-- Web界面支持
+## 🎯 首次使用（1-3分钟）
+### 方式1：极速启动（推荐）
+1. **双击启动**：`DocuFlow-极速启动器.command`
+2. **等待安装**：首次使用自动安装依赖（1-2分钟）
+3. **开始使用**：安装完成后自动启动
 
-## 📄 许可证
+### 方式2：创建桌面图标
+1. **双击创建**：`创建桌面快捷方式.command`
+2. **桌面图标**：在桌面找到DocuFlow图标
+3. **一键启动**：双击桌面图标即可启动
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+## ⚡ 性能优化
+- **首次启动**：1-2分钟（安装依赖）
+- **后续启动**：2-3秒（极速启动）
+- **智能缓存**：自动跳过已安装的依赖
 
-## 🤝 贡献
+## 🔍 故障排除
 
-欢迎提交问题报告、功能请求和代码贡献！
+#### 📋 日志文件
+- **详细日志**：`~/Desktop/DocuFlow_启动日志.txt`
+- **命令行日志**：`~/Documents/DocuFlow.log`
+
+#### 🛠️ 常见问题
+| 问题 | 解决方案 |
+|------|----------|
+| 网络超时 | 使用国内镜像源 |
+| 权限问题 | 使用`终极启动器` |
+| 依赖冲突 | 自动清理重装 |
+| 启动失败 | 查看详细日志 |
+
+#### 📞 技术支持
+1. **查看日志**：打开`~/Desktop/DocuFlow_启动日志.txt`
+2. **手动安装**：按日志提示操作
+3. **命令行测试**：`./venv/bin/python3 main_pyside.py`
+
+## 🎨 特色功能
+- 📁 **拖拽支持**：直接拖拽文件到界面
+- ⚙️ **批量处理**：支持文件夹批量转换
+- 🎯 **智能识别**：自动检测文件格式
+- 📊 **进度显示**：实时转换进度
+- 💾 **记忆功能**：记住上次使用的设置
+
+## 🔄 更新说明
+- **v3.0**：终极启动器，一键解决所有问题
+- **v2.0**：智能检测和自动安装
+- **v1.0**：基础文档转换功能

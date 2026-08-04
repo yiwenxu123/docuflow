@@ -63,7 +63,7 @@ class StructuredLogger:
         """
         log_data = {
             'event': event,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now().astimezone().isoformat(),
             **kwargs
         }
         

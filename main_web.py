@@ -203,6 +203,8 @@ def convert_files():
         use_async = data.get('use_async', False)
         max_workers = data.get('max_workers', 4)
         output_location = data.get('output_location', 'temp')  # 'temp' 或 'source'
+        clean_content = data.get('clean_content', True)
+        use_markitdown = data.get('use_markitdown', False)
         
         if not file_paths:
             return jsonify({'success': False, 'error': '没有要转换的文件'})
@@ -225,7 +227,10 @@ def convert_files():
             conversion_results = converter.async_batch_convert(
                 file_paths, output_format, output_dir,
                 keep_original_name=keep_original_name,
-                max_workers=max_workers
+                max_workers=max_workers,
+                filter_images=clean_content,
+                clean_content=clean_content,
+                use_markitdown=use_markitdown
             )
             
             for file_path, result in conversion_results.items():
@@ -259,7 +264,8 @@ def convert_files():
                 try:
                     # convert_file返回的是输出文件路径，不是字典
                     output_file_path = converter.convert_file(
-                        file_path, output_format, output_dir, keep_original_name
+                        file_path, output_format, output_dir, keep_original_name, 
+                        filter_images=clean_content, clean_content=clean_content, use_markitdown=use_markitdown
                     )
                     
                     # 确保返回完整的文件路径信息
@@ -273,7 +279,7 @@ def convert_files():
                         }
                         
                         results.append({
-                            'file': os.path.basename(file_path),
+                            'file': os.path.basename(output_file_path),
                             'success': True,
                             'output_file': output_file_path,
                             'download_id': download_id,

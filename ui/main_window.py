@@ -1,850 +1,394 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-DocuFlow - 主窗口界面
-"""
-
-import os
 import sys
-
+import logging
+from pathlib import Path
 try:
     from PySide6.QtWidgets import (
-        QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-        QPushButton, QLabel, QComboBox, QLineEdit, QTextEdit, QProgressBar,
-        QFileDialog, QMessageBox, QListWidget, QListWidgetItem, QGroupBox,
-        QCheckBox, QSplitter, QFrame, QDialog, QDialogButtonBox, QStyledItemDelegate
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar, 
+        QMessageBox, QSplitter, QTabWidget, QGroupBox, QFormLayout, 
+        QLineEdit, QComboBox, QLabel, QDialog, QDialogButtonBox
     )
-    from PySide6.QtCore import Qt
-    from PySide6.QtGui import QPainter, QFontMetrics
-    QT_VERSION = "PySide6"
+    from PySide6.QtCore import Qt, Signal, QObject, QThread
+    from PySide6.QtGui import QDropEvent
 except ImportError:
     from PyQt5.QtWidgets import (
-        QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-        QPushButton, QLabel, QComboBox, QLineEdit, QTextEdit, QProgressBar,
-        QFileDialog, QMessageBox, QListWidget, QListWidgetItem, QGroupBox,
-        QCheckBox, QSplitter, QFrame, QDialog, QDialogButtonBox, QStyledItemDelegate
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar, 
+        QMessageBox, QSplitter, QTabWidget, QGroupBox, QFormLayout, 
+        QLineEdit, QComboBox, QLabel, QDialog, QDialogButtonBox
     )
-    from PyQt5.QtCore import Qt
-    from PyQt5.QtGui import QPainter, QFontMetrics
-    QT_VERSION = "PyQt5"
+    from PyQt5.QtCore import Qt, pyqtSignal as Signal, QObject, QThread
+    from PyQt5.QtGui import QDropEvent
 
-class ComboBoxDelegate(QStyledItemDelegate):
-    """自定义下拉菜单委托，用于显示选中项的对号"""
-    
-    def __init__(self, combo_box, parent=None):
-        super().__init__(parent)
-        self.combo_box = combo_box
-    
-    def paint(self, painter, option, index):
-        # 调用父类的绘制方法
-        super().paint(painter, option, index)
-        
-        # 如果是当前选中的项，绘制对号
-        if index.row() == self.combo_box.currentIndex():
-            painter.save()
-            
-            # 设置对号的颜色和字体
-            painter.setPen(Qt.green)
-            font = painter.font()
-            font.setBold(True)
-            painter.setFont(font)
-            
-            # 计算对号的位置
-            check_mark = "✓"
-            fm = QFontMetrics(font)
-            check_width = fm.width(check_mark)
-            check_height = fm.height()
-            
-            x = option.rect.left() + 12
-            y = option.rect.top() + (option.rect.height() + check_height) // 2 - 2
-            
-            # 绘制对号
-            painter.drawText(x, y, check_mark)
-            painter.restore()
+from converter.document_converter import DocumentConverter, ConversionError
+from config import config
 
-class FileTypeFilterDialog(QDialog):
-    """文件类型过滤对话框"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("选择要转换的文件类型")
-        self.setModal(True)
-        self.resize(300, 250)
-        self.selected_types = []
-        self.setup_ui()
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # 说明标签
-        info_label = QLabel("请选择要转换的文件类型：")
-        layout.addWidget(info_label)
-        
-        # 文件类型复选框
-        self.checkboxes = {}
-        file_types = {
-            '.docx': 'Word文档 (.docx)',
-            '.md': 'Markdown (.md)',
-            '.pdf': 'PDF文档 (.pdf)',
-            '.html': 'HTML文件 (.html)',
-            '.epub': 'EPUB电子书 (.epub)',
-            '.xlsx': 'Excel表格 (.xlsx)',
-            '.xls': 'Excel表格 (.xls)'
+# 日志记录器
+logger = logging.getLogger(__name__)
+
+class QTextEditLogger(logging.Handler):
+    def __init__(self, parent):
+        logging.Handler.__init__(self)
+        self.widget = QTextEdit(parent)
+        self.widget.setReadOnly(True)
+
+    def emit(self, record):
+        msg = self.format(record)
+        # 直接添加到widget，避免信号槽问题
+        self.widget.append(msg)
+
+class ConversionWorker(QObject):
+    conversion_finished = Signal(str)
+    conversion_error = Signal(str)
+    conversion_completed = Signal(dict)  # 新增：传递完整的转换结果
+
+    def __init__(self, files_to_convert, output_dir, output_format):
+        super().__init__()
+        self.files_to_convert = files_to_convert
+        # 空字符串转换为None，使用源文件所在目录
+        self.output_dir = output_dir if output_dir.strip() else None
+        self.output_format = output_format
+
+    def run(self):
+        converter = DocumentConverter()
+        results = {
+            'successful': [],
+            'failed': [],
+            'errors': []
         }
         
-        for ext, desc in file_types.items():
-            checkbox = QCheckBox(desc)
-            checkbox.setChecked(True)  # 默认全选
-            self.checkboxes[ext] = checkbox
-            layout.addWidget(checkbox)
-        
-        # 全选/全不选按钮
-        button_layout = QHBoxLayout()
-        select_all_btn = QPushButton("全选")
-        select_none_btn = QPushButton("全不选")
-        select_all_btn.clicked.connect(self.select_all)
-        select_none_btn.clicked.connect(self.select_none)
-        button_layout.addWidget(select_all_btn)
-        button_layout.addWidget(select_none_btn)
-        layout.addLayout(button_layout)
-        
-        # 对话框按钮
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
-    
-    def select_all(self):
-        """全选"""
-        for checkbox in self.checkboxes.values():
-            checkbox.setChecked(True)
-    
-    def select_none(self):
-        """全不选"""
-        for checkbox in self.checkboxes.values():
-            checkbox.setChecked(False)
-    
-    def get_selected_types(self):
-        """获取选中的文件类型"""
-        return [ext for ext, checkbox in self.checkboxes.items() if checkbox.isChecked()]
-
-class FileListItem(QWidget):
-    """自定义文件列表项，包含删除按钮"""
-    
-    def __init__(self, file_path, parent_window):
-        super().__init__()
-        self.file_path = file_path
-        self.parent_window = parent_window
-        self.setup_ui()
-    
-    def setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)  # 减少垂直边距
-        layout.setSpacing(8)  # 减少间距
-        
-        # 设置固定高度使列表更紧凑
-        self.setFixedHeight(32)
-        
-        # 文件图标和名称
-        file_label = QLabel(f"📄 {os.path.basename(self.file_path)}")
-        file_label.setToolTip(self.file_path)
-        file_label.setStyleSheet("""
-            QLabel {
-                color: #2c3e50;
-                font-size: 13px;
-                padding: 2px;
-            }
-        """)
-        layout.addWidget(file_label)
-        
-        layout.addStretch()
-        
-        # 删除按钮 - 简洁的叉号设计
-        delete_btn = QPushButton("❌")
-        delete_btn.setFixedSize(20, 20)
-        delete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #666;
-                border: none;
-                font-size: 12px;
-                text-align: center;
-            }
-            QPushButton:hover {
-                color: #ff4444;
-                font-size: 14px;
-            }
-            QPushButton:pressed {
-                color: #cc0000;
-            }
-        """)
-        delete_btn.setToolTip("删除此文件")
-        delete_btn.clicked.connect(self.delete_file)
-        layout.addWidget(delete_btn)
-    
-    def delete_file(self):
-        """删除文件"""
-        self.parent_window.remove_file(self.file_path)
-if QT_VERSION == "PySide6":
-    from PySide6.QtCore import Qt, QThread, Signal as pyqtSignal, QTimer
-    from PySide6.QtGui import QFont, QIcon, QPixmap, QDragEnterEvent, QDropEvent
-else:
-    from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-    from PyQt5.QtGui import QFont, QIcon, QPixmap, QDragEnterEvent, QDropEvent
-from converter.document_converter import DocumentConverter
-from utils.file_utils import get_supported_formats, is_supported_file
-
-class ConversionWorker(QThread):
-    """转换工作线程"""
-    progress_updated = pyqtSignal(int, str)  # 进度, 状态信息
-    file_processed = pyqtSignal(str, bool, str)  # 文件名, 是否成功, 错误信息
-    conversion_finished = pyqtSignal(list)  # 转换完成的文件列表
-    
-    def __init__(self, files, output_format, output_dir, keep_original_name):
-        super().__init__()
-        self.files = files
-        self.output_format = output_format
-        self.output_dir = output_dir
-        self.keep_original_name = keep_original_name
-        self.converter = DocumentConverter()
-        
-    def run(self):
-        """执行转换任务"""
-        total_files = len(self.files)
-        converted_files = []
-        
-        for i, file_path in enumerate(self.files):
+        for file_path in self.files_to_convert:
             try:
-                # 更新进度
-                progress = int((i / total_files) * 100)
-                self.progress_updated.emit(progress, f"正在转换: {os.path.basename(file_path)}")
-                
-                # 执行转换
-                output_file = self.converter.convert_file(
-                    file_path, self.output_format, self.output_dir, self.keep_original_name
-                )
-                
+                output_file = converter.convert_file(file_path, self.output_format, self.output_dir)
                 if output_file:
-                    converted_files.append(output_file)
-                    self.file_processed.emit(os.path.basename(file_path), True, "")
+                    results['successful'].append({
+                        'input_file': file_path,
+                        'output_file': output_file
+                    })
                 else:
-                    self.file_processed.emit(os.path.basename(file_path), False, "转换失败")
-                    
+                    results['failed'].append(file_path)
+                    results['errors'].append(f"{Path(file_path).name}: 转换失败")
+            except ConversionError as e:
+                results['failed'].append(file_path)
+                results['errors'].append(f"{Path(file_path).name}: {str(e)}")
             except Exception as e:
-                self.file_processed.emit(os.path.basename(file_path), False, str(e))
+                results['failed'].append(file_path)
+                results['errors'].append(f"{Path(file_path).name}: 发生意外错误: {str(e)}")
         
-        # 转换完成
-        self.progress_updated.emit(100, "转换完成")
-        self.conversion_finished.emit(converted_files)
+        # 只发出完整的转换结果信号，避免重复通知
+        self.conversion_completed.emit(results)
+        
+        # 仅在完全成功或完全失败时发出旧信号，但不再用于UI通知
+        if len(results['failed']) == 0:
+            self.conversion_finished.emit("所有文件转换成功！")
+        elif len(results['successful']) == 0:
+            self.conversion_error.emit("所有文件转换失败")
 
 class MainWindow(QMainWindow):
-    """主窗口类"""
-    
     def __init__(self):
         super().__init__()
-        self.selected_files = []
-        self.conversion_worker = None
-        self.init_ui()
-        
-    def init_ui(self):
-        """初始化用户界面"""
-        self.setWindowTitle("DocuFlow - 文档转换器")
-        self.setGeometry(100, 100, 900, 700)
-        
-        # 创建中央部件
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # 主布局
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        
-        # 标题
-        title_label = QLabel("📄 DocuFlow 文档转换器")
-        title_label.setFont(QFont("Arial", 18, QFont.Bold))
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("color: #2c3e50; margin: 10px;")
-        main_layout.addWidget(title_label)
-        
-        # 文件选择区域
-        file_group = self.create_file_selection_group()
-        main_layout.addWidget(file_group)
-        
-        # 转换设置区域
-        settings_group = self.create_conversion_settings_group()
-        main_layout.addWidget(settings_group)
-        
-        # 进度和状态区域
-        progress_group = self.create_progress_group()
-        main_layout.addWidget(progress_group)
-        
-        # 转换按钮
-        self.convert_button = QPushButton("🚀 开始转换")
-        self.convert_button.setFont(QFont("Arial", 12, QFont.Bold))
-        self.convert_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 6px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-            QPushButton:disabled {
-                background-color: #bdc3c7;
-            }
-        """)
-        self.convert_button.clicked.connect(self.start_conversion)
-        self.convert_button.setEnabled(False)
-        main_layout.addWidget(self.convert_button)
-        
-        # 设置拖拽支持
+        self.setWindowTitle(config.window.title)
+        self.setGeometry(100, 100, config.window.width, config.window.height)
+        self.setMinimumSize(config.window.min_width, config.window.min_height)
         self.setAcceptDrops(True)
+
+        self._init_ui()
+        self._setup_logging()
+
+    def _init_ui(self):
+        # 主布局
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QHBoxLayout(main_widget)
+
+        # 分割器
+        splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(splitter)
+
+        # 左侧面板：文件列表
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
         
-    def create_file_selection_group(self):
-        """创建文件选择组"""
-        group = QGroupBox("📁 文件选择")
-        layout = QVBoxLayout(group)
-        
-        # 按钮布局
+        self.file_list_widget = QListWidget()
+        self.file_list_widget.setSelectionMode(QListWidget.ExtendedSelection)
+
         button_layout = QHBoxLayout()
+        self.add_files_button = QPushButton("添加文件")
+        self.add_folder_button = QPushButton("添加文件夹")
+        self.remove_files_button = QPushButton("移除选中")
+        self.clear_files_button = QPushButton("清空列表")
+        button_layout.addWidget(self.add_files_button)
+        button_layout.addWidget(self.add_folder_button)
+        button_layout.addWidget(self.remove_files_button)
+        button_layout.addWidget(self.clear_files_button)
+
+        left_layout.addWidget(QLabel("待转换文件列表："))
+        left_layout.addWidget(self.file_list_widget)
+        left_layout.addLayout(button_layout)
         
-        self.select_files_btn = QPushButton("选择文件")
-        self.select_folder_btn = QPushButton("选择文件夹")
-        self.clear_files_btn = QPushButton("清空列表")
+        splitter.addWidget(left_panel)
+
+        # 右侧面板：设置和日志
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        tab_widget = QTabWidget()
+
+        # 设置选项卡
+        settings_tab = QWidget()
+        settings_layout = QFormLayout(settings_tab)
         
-        for btn in [self.select_files_btn, self.select_folder_btn, self.clear_files_btn]:
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #ecf0f1;
-                    border: 1px solid #bdc3c7;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #d5dbdb;
-                }
-            """)
+        # 输出目录设置
+        default_dir = config.conversion.default_output_dir
+        self.output_dir_edit = QLineEdit(str(default_dir) if default_dir else "")
+        self.output_dir_edit.setPlaceholderText("留空则使用源文件所在目录")
+        self.browse_button = QPushButton("浏览...")
+        output_dir_layout = QHBoxLayout()
+        output_dir_layout.addWidget(self.output_dir_edit)
+        output_dir_layout.addWidget(self.browse_button)
+        settings_layout.addRow("输出目录:", output_dir_layout)
+
+        self.output_format_combo = QComboBox()
+        for ext, fmt in config.files.supported_output_formats.items():
+            self.output_format_combo.addItem(f"{fmt.description}", ext)
+        settings_layout.addRow("输出格式:", self.output_format_combo)
+
+        self.start_conversion_button = QPushButton("开始转换")
+        self.start_conversion_button.setStyleSheet("font-size: 16px; padding: 10px;")
+
+        right_layout.addWidget(tab_widget)
+        right_layout.addWidget(self.start_conversion_button)
         
-        button_layout.addWidget(self.select_files_btn)
-        button_layout.addWidget(self.select_folder_btn)
-        button_layout.addWidget(self.clear_files_btn)
-        button_layout.addStretch()
+        tab_widget.addTab(settings_tab, "转换设置")
+
+        # 日志选项卡
+        log_tab = QWidget()
+        log_layout = QVBoxLayout(log_tab)
+        self.log_widget_handler = QTextEditLogger(self)
+        log_layout.addWidget(self.log_widget_handler.widget)
+        tab_widget.addTab(log_tab, "运行日志")
+
+        splitter.addWidget(right_panel)
+        splitter.setSizes([self.width() // 2, self.width() // 2])
+
+        # 连接信号和槽
+        self.add_files_button.clicked.connect(self.add_files)
+        self.add_folder_button.clicked.connect(self.add_folder)
+        self.remove_files_button.clicked.connect(self.remove_files)
+        self.clear_files_button.clicked.connect(self.clear_files)
+        self.browse_button.clicked.connect(self.browse_output_dir)
+        self.start_conversion_button.clicked.connect(self.start_conversion)
+
+    def _setup_logging(self):
+        # 清除现有的处理器，避免重复
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
         
-        layout.addLayout(button_layout)
+        # 设置基本配置
+        logging.basicConfig(
+            level=config.logging.level,
+            format=config.logging.format,
+            handlers=[
+                logging.FileHandler(config.logging.file, encoding='utf-8'),
+                logging.StreamHandler()
+            ]
+        )
         
-        # 文件列表
-        self.file_list = QListWidget()
-        self.file_list.setMinimumHeight(200)  # 增加最小高度
-        self.file_list.setStyleSheet("""
-            QListWidget {
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                padding: 5px;
-            }
-            QListWidget::item {
-                padding: 3px 5px;
-                margin: 1px 0px;
-                border-radius: 4px;
-            }
-            QListWidget::item:hover {
-                background-color: #f0f8f0;
-            }
-            QListWidget::item:selected {
-                background-color: #e8f5e8;
-                border: 1px solid #4CAF50;
-            }
-        """)
-        self.file_list.setAlternatingRowColors(False)  # 关闭交替颜色，使用自定义样式
-        layout.addWidget(self.file_list)
+        # 添加GUI日志处理器
+        log_formatter = logging.Formatter(config.logging.format)
+        self.log_widget_handler.setFormatter(log_formatter)
+        root_logger.addHandler(self.log_widget_handler)
         
-        # 拖拽提示
-        drag_label = QLabel("💡 提示: 您也可以直接拖拽文件到此窗口")
-        drag_label.setStyleSheet("color: #7f8c8d; font-style: italic;")
-        drag_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(drag_label)
+        # 设置第三方库日志级别
+        logging.getLogger('PIL').setLevel(logging.WARNING)
+        logging.getLogger('pdfplumber').setLevel(logging.WARNING)
         
-        # 连接信号
-        self.select_files_btn.clicked.connect(self.select_files)
-        self.select_folder_btn.clicked.connect(self.select_folder)
-        self.clear_files_btn.clicked.connect(self.clear_files)
-        
-        return group
-        
-    def create_conversion_settings_group(self):
-        """创建转换设置组"""
-        group = QGroupBox("⚙️ 转换设置")
-        layout = QGridLayout(group)
-        
-        # 输出格式
-        layout.addWidget(QLabel("输出格式:"), 0, 0)
-        self.format_combo = QComboBox()
-        self.format_combo.addItems([
-            "Word文档 (.docx)",
-            "Markdown (.md)", 
-            "PDF文档 (.pdf)",
-            "HTML文件 (.html)",
-            "EPUB电子书 (.epub)"
-        ])
-        
-        # 设置自定义委托来显示对号
-        delegate = ComboBoxDelegate(self.format_combo)
-        self.format_combo.setItemDelegate(delegate)
-        
-        # 优化的下拉菜单样式
-        format_combo_style = """
-            QComboBox {
-                background-color: white;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 14px;
-                min-height: 20px;
-            }
-            QComboBox:hover {
-                border-color: #4CAF50;
-            }
-            QComboBox:focus {
-                border-color: #4CAF50;
-                outline: none;
-            }
-            QComboBox::drop-down {
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 30px;
-                border-left: 1px solid #e0e0e0;
-                border-top-right-radius: 8px;
-                border-bottom-right-radius: 8px;
-                background-color: #f8f9fa;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 8px solid #666;
-                width: 0;
-                height: 0;
-            }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                outline: none;
-                padding: 4px;
-            }
-            QComboBox QAbstractItemView::item {
-                padding: 10px 12px 10px 35px;
-                border: none;
-                min-height: 25px;
-                background-color: transparent;
-                color: #333;
-            }
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #f0f8f0;
-                color: #2e7d32;
-            }
-            QComboBox QAbstractItemView::item:selected {
-                background-color: transparent;
-                color: #2e7d32;
-            }
-        """
-        self.format_combo.setStyleSheet(format_combo_style)
-        layout.addWidget(self.format_combo, 0, 1)
-        
-        # 输出目录
-        layout.addWidget(QLabel("输出目录:"), 1, 0)
-        output_layout = QHBoxLayout()
-        self.output_dir_edit = QLineEdit()
-        self.output_dir_edit.setPlaceholderText("默认与原文件相同目录")
-        self.output_dir_edit.setStyleSheet("""
-            QLineEdit {
-                border: 1px solid #bdc3c7;
-                border-radius: 4px;
-                padding: 5px;
-            }
-        """)
-        self.browse_output_btn = QPushButton("浏览")
-        self.browse_output_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ecf0f1;
-                border: 1px solid #bdc3c7;
-                padding: 5px 15px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #d5dbdb;
-            }
-        """)
-        
-        output_layout.addWidget(self.output_dir_edit)
-        output_layout.addWidget(self.browse_output_btn)
-        layout.addLayout(output_layout, 1, 1)
-        
-        # 文件命名选项
-        self.keep_name_checkbox = QCheckBox("保留原文件名（否则添加格式后缀）")
-        self.keep_name_checkbox.setChecked(True)
-        layout.addWidget(self.keep_name_checkbox, 2, 0, 1, 2)
-        
-        # 连接信号
-        self.browse_output_btn.clicked.connect(self.browse_output_directory)
-        
-        return group
-        
-    def create_progress_group(self):
-        """创建进度显示组"""
-        group = QGroupBox("📊 转换进度")
-        layout = QVBoxLayout(group)
-        
-        # 进度条
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid #bdc3c7;
-                border-radius: 4px;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #27ae60;
-                border-radius: 3px;
-            }
-        """)
-        layout.addWidget(self.progress_bar)
-        
-        # 状态标签
-        self.status_label = QLabel("准备就绪")
-        self.status_label.setStyleSheet("color: #2c3e50; font-weight: bold;")
-        layout.addWidget(self.status_label)
-        
-        # 结果文本框
-        self.result_text = QTextEdit()
-        self.result_text.setMaximumHeight(120)
-        self.result_text.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #bdc3c7;
-                border-radius: 4px;
-                background-color: #f8f9fa;
-                font-family: 'Courier New', monospace;
-                font-size: 11px;
-            }
-        """)
-        layout.addWidget(self.result_text)
-        
-        return group
-    
-    def select_files(self):
-        """选择文件"""
+        logger.info(f"{config.app.name} v{config.app.version} 已启动")
+
+    def add_files(self):
+        """添加单个或多个文件"""
         files, _ = QFileDialog.getOpenFileNames(
-            self, "选择要转换的文件", "",
-            "支持的文件 (*.docx *.md *.pdf *.html *.epub *.xlsx *.xls);;Word文档 (*.docx);;Markdown (*.md);;PDF (*.pdf);;HTML (*.html);;EPUB (*.epub);;Excel表格 (*.xlsx *.xls);;所有文件 (*)"
+            self, "选择文件", "",
+            "All Files (*)"
         )
-        if files:
-            self.add_files(files)
-    
-    def select_folder(self):
-        """选择文件夹并添加其中的文件"""
-        folder_path = QFileDialog.getExistingDirectory(
-            self, "选择文件夹", "",
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-        )
-        
-        if folder_path:
-            # 显示文件类型过滤对话框
-            filter_dialog = FileTypeFilterDialog(self)
-            if filter_dialog.exec_() == QDialog.Accepted:
-                selected_types = filter_dialog.get_selected_types()
-                
-                if not selected_types:
-                    QMessageBox.information(self, "提示", "请至少选择一种文件类型。")
-                    return
-                
-                files = []
-                for root, dirs, filenames in os.walk(folder_path):
-                    for filename in filenames:
-                        file_path = os.path.join(root, filename)
-                        # 检查文件是否为支持的格式且在选中的类型中
-                        if is_supported_file(file_path):
-                            file_ext = os.path.splitext(filename)[1].lower()
-                            if file_ext in selected_types:
-                                files.append(file_path)
-                
-                if files:
-                    self.add_files(files)
-                    QMessageBox.information(self, "成功", f"已添加 {len(files)} 个文件到转换列表。")
-                else:
-                    QMessageBox.information(self, "提示", "所选文件夹中没有找到符合条件的文件。")
-    
-    def add_files(self, files):
-        """添加文件到列表"""
         for file_path in files:
-            if file_path not in self.selected_files and is_supported_file(file_path):
-                self.selected_files.append(file_path)
-                
-                # 创建自定义列表项
-                item = QListWidgetItem()
-                file_widget = FileListItem(file_path, self)
-                # 设置列表项的固定高度
-                item.setSizeHint(file_widget.size())
-                
-                self.file_list.addItem(item)
-                self.file_list.setItemWidget(item, file_widget)
-        
-        self.update_ui_state()
-    
-    def remove_file(self, file_path):
-        """从列表中移除指定文件"""
-        if file_path in self.selected_files:
-            self.selected_files.remove(file_path)
+            if file_path and file_path not in [self.file_list_widget.item(i).text() 
+                                             for i in range(self.file_list_widget.count())]:
+                self.file_list_widget.addItem(file_path)
+
+    def add_folder(self):
+        """添加文件夹中的所有文件"""
+        folder = QFileDialog.getExistingDirectory(self, "选择文件夹")
+        if folder:
+            from pathlib import Path
+            folder_path = Path(folder)
+            files_added = 0
+            for file_path in folder_path.rglob('*'):
+                if file_path.is_file():
+                    file_str = str(file_path)
+                    if file_str not in [self.file_list_widget.item(i).text() 
+                                      for i in range(self.file_list_widget.count())]:
+                        self.file_list_widget.addItem(file_str)
+                        files_added += 1
             
-            # 找到并移除对应的列表项
-            for i in range(self.file_list.count()):
-                item = self.file_list.item(i)
-                widget = self.file_list.itemWidget(item)
-                if widget and widget.file_path == file_path:
-                    self.file_list.takeItem(i)
-                    break
-            
-            self.update_ui_state()
-    
+            if files_added > 0:
+                QMessageBox.information(self, "成功", f"已添加 {files_added} 个文件")
+
+    def remove_files(self):
+        """移除选中的文件"""
+        for item in self.file_list_widget.selectedItems():
+            self.file_list_widget.takeItem(self.file_list_widget.row(item))
+
     def clear_files(self):
         """清空文件列表"""
-        self.selected_files.clear()
-        self.file_list.clear()
-        self.update_ui_state()
-    
-    def browse_output_directory(self):
+        self.file_list_widget.clear()
+
+    def browse_output_dir(self):
         """浏览输出目录"""
         directory = QFileDialog.getExistingDirectory(self, "选择输出目录")
         if directory:
             self.output_dir_edit.setText(directory)
-    
-    def update_ui_state(self):
-        """更新UI状态"""
-        has_files = len(self.selected_files) > 0
-        self.convert_button.setEnabled(has_files)
-        
-        if has_files:
-            self.status_label.setText(f"已选择 {len(self.selected_files)} 个文件")
-        else:
-            self.status_label.setText("请选择要转换的文件")
-    
+
     def start_conversion(self):
         """开始转换"""
-        if not self.selected_files:
-            QMessageBox.warning(self, "警告", "请先选择要转换的文件")
+        if self.file_list_widget.count() == 0:
+            QMessageBox.warning(self, "警告", "请先添加需要转换的文件！")
             return
-        
-        # 获取转换参数
-        format_text = self.format_combo.currentText()
-        output_format = format_text.split('(')[1].split(')')[0]  # 提取格式如 .pdf
-        output_dir = self.output_dir_edit.text().strip() or None
-        keep_original_name = self.keep_name_checkbox.isChecked()
-        
+
+        # 收集所有文件
+        files_to_convert = []
+        for i in range(self.file_list_widget.count()):
+            files_to_convert.append(self.file_list_widget.item(i).text())
+
+        output_dir = self.output_dir_edit.text()
+        output_format = self.output_format_combo.currentData()
+
         # 禁用转换按钮
-        self.convert_button.setEnabled(False)
-        self.convert_button.setText("转换中...")
+        self.start_conversion_button.setEnabled(False)
+        self.start_conversion_button.setText("转换中...")
+
+        # 创建转换线程
+        self.worker = ConversionWorker(files_to_convert, output_dir, output_format)
+        self.thread = QThread()
+        self.worker.moveToThread(self.thread)
+
+        # 连接信号
+        self.worker.conversion_error.connect(self.on_conversion_error)
+        self.worker.conversion_completed.connect(self.on_conversion_completed)
+        # 注意：conversion_finished信号已废弃，只使用conversion_completed信号
+
+        self.thread.started.connect(self.worker.run)
+        self.thread.finished.connect(self.thread.deleteLater)
+
+        self.thread.start()
+
+    def on_conversion_completed(self, results):
+        """转换完成处理"""
+        self.thread.quit()
+        self.thread.wait()
         
-        # 清空结果文本
-        self.result_text.clear()
+        successful_count = len(results['successful'])
+        failed_count = len(results['failed'])
         
-        # 创建并启动工作线程
-        self.conversion_worker = ConversionWorker(
-            self.selected_files, output_format, output_dir, keep_original_name
-        )
-        self.conversion_worker.progress_updated.connect(self.update_progress)
-        self.conversion_worker.file_processed.connect(self.file_processed)
-        self.conversion_worker.conversion_finished.connect(self.conversion_finished)
-        self.conversion_worker.start()
-    
-    def update_progress(self, progress, status):
-        """更新进度"""
-        self.progress_bar.setValue(progress)
-        self.status_label.setText(status)
-    
-    def file_processed(self, filename, success, error_msg):
-        """文件处理完成"""
-        if success:
-            self.result_text.append(f"✅ {filename} - 转换成功")
+        # 启用转换按钮
+        self.start_conversion_button.setEnabled(True)
+        self.start_conversion_button.setText("开始转换")
+        
+        if failed_count == 0:
+            QMessageBox.information(self, "成功", f"所有 {successful_count} 个文件转换成功！")
+        elif successful_count == 0:
+            QMessageBox.critical(self, "失败", f"所有 {failed_count} 个文件转换失败")
         else:
-            self.result_text.append(f"❌ {filename} - 转换失败: {error_msg}")
-    
-    def conversion_finished(self, converted_files):
-        """转换完成"""
-        self.convert_button.setEnabled(True)
-        self.convert_button.setText("🚀 开始转换")
+            QMessageBox.warning(self, "部分成功", 
+                              f"成功转换 {successful_count} 个文件，\n"
+                              f"失败 {failed_count} 个文件")
         
-        total_files = len(self.selected_files)
-        success_count = len(converted_files)
-        failed_count = total_files - success_count
+        # 显示详细错误信息
+        if results['errors']:
+            logger.error("转换错误详情：")
+            for error in results['errors']:
+                logger.error(error)
+
+    def on_conversion_finished(self, message):
+        """转换成功 - 已废弃，避免重复通知"""
+        # 这个方法已被废弃，通知由on_conversion_completed统一处理
+        pass
+
+    def on_conversion_error(self, message):
+        """转换失败"""
+        self.thread.quit()
+        self.thread.wait()
         
-        # 构建详细的转换结果信息
-        if success_count > 0 and failed_count == 0:
-            # 全部成功
-            msg = QMessageBox()
-            msg.setWindowTitle("转换完成")
-            msg.setText(f"✅ 批量转换完成！")
-            msg.setInformativeText(f"成功转换了全部 {success_count} 个文件\n\n是否打开输出文件夹？")
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg.setDefaultButton(QMessageBox.Yes)
-            
-            if msg.exec_() == QMessageBox.Yes:
-                # 打开输出文件夹
-                output_dir = os.path.dirname(converted_files[0])
-                os.system(f'open "{output_dir}"')  # macOS
-                
-        elif success_count > 0 and failed_count > 0:
-            # 部分成功
-            msg = QMessageBox()
-            msg.setWindowTitle("转换完成（部分成功）")
-            msg.setText(f"⚠️ 批量转换完成，但有部分文件转换失败")
-            
-            # 分析失败原因并提供建议
-            error_analysis = self._analyze_conversion_errors()
-            
-            detailed_info = f"成功转换：{success_count} 个文件\n失败文件：{failed_count} 个文件\n\n"
-            detailed_info += error_analysis
-            detailed_info += "\n\n详细错误信息请查看下方结果区域。\n是否打开输出文件夹查看成功转换的文件？"
-            
-            msg.setInformativeText(detailed_info)
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg.setDefaultButton(QMessageBox.Yes)
-            
-            if msg.exec_() == QMessageBox.Yes and converted_files:
-                # 打开输出文件夹
-                output_dir = os.path.dirname(converted_files[0])
-                os.system(f'open "{output_dir}"')  # macOS
-                
-        else:
-            # 全部失败
-            msg = QMessageBox()
-            msg.setWindowTitle("转换失败")
-            msg.setText(f"❌ 批量转换失败")
-            
-            # 分析失败原因并提供建议
-            error_analysis = self._analyze_conversion_errors()
-            failure_info = f"所有 {total_files} 个文件都转换失败\n\n{error_analysis}\n\n详细错误信息请查看下方结果区域。"
-            
-            msg.setInformativeText(failure_info)
-            msg.setIcon(QMessageBox.Critical)
-            msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec_()
-    
-    def _analyze_conversion_errors(self) -> str:
-        """分析转换错误并提供针对性建议"""
-        result_text = self.result_text.toPlainText()
-        lines = result_text.split('\n')
+        # 启用转换按钮
+        self.start_conversion_button.setEnabled(True)
+        self.start_conversion_button.setText("开始转换")
         
-        # 统计不同类型的错误
-        error_stats = {
-            'docx_corrupted': 0,  # DOCX文件损坏
-            'pdf_issues': 0,      # PDF相关问题
-            'permission_denied': 0, # 权限问题
-            'file_not_found': 0,   # 文件不存在
-            'format_unsupported': 0, # 格式不支持
-            'encoding_issues': 0,   # 编码问题
-            'other_errors': 0      # 其他错误
-        }
-        
-        failed_files = []
-        
-        for line in lines:
-            if line.startswith('❌'):
-                # 提取文件名和错误信息
-                parts = line.split(' - ', 1)
-                if len(parts) >= 2:
-                    file_name = parts[0].replace('❌ ', '')
-                    error_msg = parts[1].lower()
-                    failed_files.append(file_name)
-                    
-                    # 分类错误类型
-                    if 'docx' in error_msg and ('损坏' in error_msg or 'container' in error_msg):
-                        error_stats['docx_corrupted'] += 1
-                    elif 'pdf' in error_msg:
-                        error_stats['pdf_issues'] += 1
-                    elif '权限' in error_msg or 'permission' in error_msg:
-                        error_stats['permission_denied'] += 1
-                    elif '找不到' in error_msg or 'not found' in error_msg:
-                        error_stats['file_not_found'] += 1
-                    elif '不支持' in error_msg or 'not supported' in error_msg:
-                        error_stats['format_unsupported'] += 1
-                    elif '编码' in error_msg or 'encoding' in error_msg:
-                        error_stats['encoding_issues'] += 1
-                    else:
-                        error_stats['other_errors'] += 1
-        
-        # 生成分析报告
-        analysis = ""
-        suggestions = []
-        
-        # 显示失败文件列表（最多10个）
-        if failed_files:
-            analysis += "失败的文件：\n"
-            display_files = failed_files[:10]
-            analysis += "\n".join([f"• {f}" for f in display_files])
-            if len(failed_files) > 10:
-                analysis += f"\n... 还有 {len(failed_files) - 10} 个文件"
-            analysis += "\n\n"
-        
-        # 根据错误类型提供建议
-        if error_stats['docx_corrupted'] > 0:
-            suggestions.append(f"📄 {error_stats['docx_corrupted']} 个DOCX文件可能已损坏，请尝试用Word重新保存")
-        
-        if error_stats['pdf_issues'] > 0:
-            suggestions.append(f"📋 {error_stats['pdf_issues']} 个PDF文件有问题，可能是加密或扫描版PDF")
-        
-        if error_stats['permission_denied'] > 0:
-            suggestions.append(f"🔒 {error_stats['permission_denied']} 个文件权限不足，请检查文件是否被占用")
-        
-        if error_stats['file_not_found'] > 0:
-            suggestions.append(f"📁 {error_stats['file_not_found']} 个文件路径有问题，请确认文件存在")
-        
-        if error_stats['format_unsupported'] > 0:
-            suggestions.append(f"⚠️ {error_stats['format_unsupported']} 个文件格式不支持当前转换")
-        
-        if error_stats['encoding_issues'] > 0:
-            suggestions.append(f"🔤 {error_stats['encoding_issues']} 个文件编码有问题，建议保存为UTF-8")
-        
-        if error_stats['other_errors'] > 0:
-            suggestions.append(f"❓ {error_stats['other_errors']} 个文件出现其他错误")
-        
-        if suggestions:
-            analysis += "错误分析和建议：\n" + "\n".join(suggestions)
-        else:
-            analysis += "建议检查文件格式和完整性，确认是否为支持的文件类型。"
-        
-        return analysis
-    
-    def dragEnterEvent(self, event: QDragEnterEvent):
+        QMessageBox.critical(self, "错误", message)
+
+    def dragEnterEvent(self, event):
         """拖拽进入事件"""
         if event.mimeData().hasUrls():
-            event.accept()
+            event.acceptProposedAction()
         else:
             event.ignore()
-    
-    def dropEvent(self, event: QDropEvent):
+
+    def dropEvent(self, event):
         """拖拽放下事件"""
         files = []
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
-            if os.path.isfile(file_path) and is_supported_file(file_path):
+            if Path(file_path).is_file():
                 files.append(file_path)
-            elif os.path.isdir(file_path):
-                # 处理文件夹
-                for root, dirs, filenames in os.walk(file_path):
-                    for filename in filenames:
-                        full_path = os.path.join(root, filename)
-                        if is_supported_file(full_path):
-                            files.append(full_path)
+            elif Path(file_path).is_dir():
+                # 如果是文件夹，添加所有文件
+                from pathlib import Path as pathlib_Path
+                folder_path = pathlib_Path(file_path)
+                for file_path in folder_path.rglob('*'):
+                    if file_path.is_file():
+                        files.append(str(file_path))
         
-        if files:
-            self.add_files(files)
-        else:
-            QMessageBox.information(self, "提示", "拖拽的文件中没有支持的文档格式")
+        # 添加文件到列表
+        for file_path in files:
+            if file_path not in [self.file_list_widget.item(i).text() 
+                               for i in range(self.file_list_widget.count())]:
+                self.file_list_widget.addItem(file_path)
+
+class FileTypeFilterDialog(QDialog):
+    """文件类型过滤对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("选择文件类型")
+        self.setModal(True)
+        self.resize(300, 200)
+        
+        layout = QVBoxLayout(self)
+        
+        self.file_type_combo = QComboBox()
+        self.file_type_combo.addItems([
+            "所有文件 (*.*)",
+            "PDF文件 (*.pdf)",
+            "Word文件 (*.docx)",
+            "Excel文件 (*.xlsx)",
+            "图片文件 (*.jpg *.png)",
+            "文本文件 (*.txt)",
+            "Markdown文件 (*.md)"
+        ])
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        
+        layout.addWidget(QLabel("选择文件类型："))
+        layout.addWidget(self.file_type_combo)
+        layout.addWidget(buttons)
+    
+    def get_selected_filter(self):
+        """获取选择的文件过滤器"""
+        return self.file_type_combo.currentText()
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())

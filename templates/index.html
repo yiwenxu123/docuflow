@@ -553,8 +553,8 @@
                         </button>
                     </div>
                 </div>
-                <div class="upload-hint">支持 PDF, Word, Excel, PowerPoint 等格式，最大 100MB</div>
-                <input type="file" id="file-input" class="file-input" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.md">
+                <div class="upload-hint">支持 PDF, Word, Excel, PowerPoint, HTML等格式，最大 100MB</div>
+                <input type="file" id="file-input" class="file-input" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.md,.html,.htm">
                 <input type="file" id="folder-input" class="file-input" webkitdirectory directory multiple>
             </div>
 
@@ -588,6 +588,18 @@
                         </div>
                     </div>
                     <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="clean-content" checked>
+                            <label for="clean-content">增强过滤（过滤图片、页面结构等）</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="use-markitdown">
+                            <label for="use-markitdown">使用 MarkItDown 转换（支持更多格式，优化LLM理解）</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label for="max-workers">线程数</label>
                         <input type="number" id="max-workers" min="1" max="8" value="4">
                     </div>
@@ -611,6 +623,37 @@
                 <button class="btn btn-secondary" onclick="clearFiles()">
                     🗑️ 清空列表
                 </button>
+            </div>
+
+            <!-- 转换结果摘要区域 -->
+            <div id="conversion-summary" style="display: none; background: #f8f9fa; border: 2px solid #4facfe; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <h3 style="color: #4facfe; margin-bottom: 15px; font-size: 1.1em;">📊 转换结果摘要</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5em; font-weight: bold; color: #4facfe;"><span id="summary-total">0</span></div>
+                        <div style="font-size: 0.8em; color: #666;">总文件数</div>
+                    </div>
+                    <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5em; font-weight: bold; color: #28a745;"><span id="summary-success">0</span></div>
+                        <div style="font-size: 0.8em; color: #666;">成功转换</div>
+                    </div>
+                    <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5em; font-weight: bold; color: #dc3545;"><span id="summary-failed">0</span></div>
+                        <div style="font-size: 0.8em; color: #666;">转换失败</div>
+                    </div>
+                    <div style="background: white; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5em; font-weight: bold; color: #ffc107;"><span id="summary-rate">0</span>%</div>
+                        <div style="font-size: 0.8em; color: #666;">成功率</div>
+                    </div>
+                </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="btn btn-primary" onclick="downloadAllFiles()" style="margin: 0 5px;">
+                        📥 下载所有文件
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearFilesAndStartNew()" style="margin: 0 5px;">
+                        📄 开始新的转换
+                    </button>
+                </div>
             </div>
 
             <!-- 下载区域 -->
@@ -757,18 +800,24 @@
             fileList.style.display = 'block';
             convertBtn.disabled = false;
 
-            fileList.innerHTML = uploadedFiles.map((file, index) => `
+            fileList.innerHTML = uploadedFiles.map((file, index) => {
+                // 检查文件是否已经转换完成
+                const statusClass = file.status || 'status-pending';
+                const statusText = file.statusText || '等待转换';
+                
+                return `
                 <div class="file-item">
                     <div class="file-info">
                         <div class="file-name">${file.name}</div>
                         <div class="file-size">${file.size}</div>
                     </div>
-                    <div class="file-status status-pending">等待转换</div>
+                    <div class="file-status ${statusClass}">${statusText}</div>
                     <button class="btn btn-danger" style="padding: 5px 10px; font-size: 0.8em;" onclick="removeFile(${index})">
                         ❌
                     </button>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function removeFile(index) {
@@ -831,7 +880,9 @@
                 keep_original_name: document.getElementById('keep-original-name').checked,
                 use_async: document.getElementById('use-async').checked,
                 max_workers: parseInt(document.getElementById('max-workers').value),
-                output_location: document.getElementById('output-location').value
+                clean_content: document.getElementById('clean-content').checked,
+                output_location: document.getElementById('output-location').value,
+                use_markitdown: document.getElementById('use-markitdown').checked
             };
 
             logMessage('开始转换 ' + uploadedFiles.length + ' 个文件...', 'info');
@@ -854,6 +905,12 @@
                             statusElement.textContent = '✅ 成功';
                             statusElement.className = 'file-status status-success';
                             
+                            // 更新uploadedFiles中的文件状态
+                            if (uploadedFiles[index]) {
+                                uploadedFiles[index].status = 'status-success';
+                                uploadedFiles[index].statusText = '✅ 成功';
+                            }
+                            
                             // 添加到下载区域
                             if (result.download_id) {
                                 addDownloadLink(result.file, result.download_id);
@@ -864,12 +921,22 @@
                         } else {
                             statusElement.textContent = '❌ 失败';
                             statusElement.className = 'file-status status-error';
+                            
+                            // 更新uploadedFiles中的文件状态
+                            if (uploadedFiles[index]) {
+                                uploadedFiles[index].status = 'status-error';
+                                uploadedFiles[index].statusText = '❌ 失败';
+                            }
+                            
                             logMessage(`❌ ${result.file} 转换失败: ${result.error}`, 'error');
                         }
                     });
 
                     const summary = data.summary;
                     logMessage(`转换完成: ${summary.success}/${summary.total} 成功 (${summary.success_rate.toFixed(1)}%)`, 'info');
+                    
+                    // 显示转换结果摘要
+                    showConversionSummary(summary);
                     
                     // 更新统计信息
                     updateStats();
@@ -937,6 +1004,36 @@
                     logMessage('清理失败: ' + data.error, 'error');
                 }
             });
+        }
+
+        function showConversionSummary(summary) {
+            const summarySection = document.getElementById('conversion-summary');
+            document.getElementById('summary-total').textContent = summary.total;
+            document.getElementById('summary-success').textContent = summary.success;
+            document.getElementById('summary-failed').textContent = summary.failed;
+            document.getElementById('summary-rate').textContent = summary.success_rate.toFixed(1);
+            summarySection.style.display = 'block';
+        }
+
+        function downloadAllFiles() {
+            // 为每个下载链接创建新的下载请求
+            downloadLinks.forEach(link => {
+                const downloadUrl = `/download/${link.download_id}`;
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
+            logMessage('开始下载所有文件...', 'info');
+        }
+
+        function clearFilesAndStartNew() {
+            clearFiles();
+            // 隐藏转换结果摘要
+            document.getElementById('conversion-summary').style.display = 'none';
+            logMessage('已准备开始新的转换任务', 'info');
         }
 
         // 页面加载完成后更新统计信息

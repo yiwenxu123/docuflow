@@ -216,15 +216,15 @@ class DocuFlowGUI(QMainWindow):
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
-        self.worker.conversion_finished.connect(self.on_conversion_finished)
         self.worker.conversion_error.connect(self.on_conversion_error)
         self.worker.conversion_completed.connect(self.on_conversion_completed)
+        # 注意：conversion_finished信号已废弃，只使用conversion_completed信号
 
         self.thread.start()
 
     def on_conversion_finished(self, message):
-        QMessageBox.information(self, "转换完成", message)
-        logger.info(message)
+        """已废弃：使用on_conversion_completed代替"""
+        # 此方法已废弃，不再显示通知，只进行清理
         self.thread.quit()
         self.thread.wait()
         self.start_conversion_button.setEnabled(True)
