@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库问答 - DocuFlow</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            min-height: 100vh;
+        }
+        .container { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 0 20px;
+        }
+        header h1 { font-size: 22px; }
+        header a { color: #666; text-decoration: none; font-size: 14px; }
+        header a:hover { color: #2563eb; }
+        .status {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #eef2ff; color: #4338ca; border-radius: 999px;
+            padding: 4px 12px; font-size: 13px;
+        }
+        .card {
+            background: #fff; border-radius: 12px; padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px;
+        }
+        .card h2 { font-size: 16px; margin-bottom: 12px; }
+        textarea {
+            width: 100%; border: 1px solid #d1d5db; border-radius: 8px;
+            padding: 12px; font-size: 15px; font-family: inherit;
+            resize: vertical; min-height: 72px;
+        }
+        textarea:focus { outline: none; border-color: #2563eb; }
+        .btn {
+            background: #2563eb; color: #fff; border: none; border-radius: 8px;
+            padding: 10px 22px; font-size: 15px; cursor: pointer; margin-top: 10px;
+        }
+        .btn:hover { background: #1d4ed8; }
+        .btn:disabled { background: #93c5fd; cursor: not-allowed; }
+        .btn.secondary { background: #e5e7eb; color: #333; }
+        .btn.secondary:hover { background: #d1d5db; }
+        .answer {
+            background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+            padding: 14px; white-space: pre-wrap; line-height: 1.7; display: none;
+        }
+        .answer.show { display: block; }
+        .answer .meta { font-size: 12px; color: #16a34a; margin-bottom: 8px; }
+        .sources { margin-top: 12px; }
+        .source-item {
+            border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-top: 8px;
+            font-size: 13px;
+        }
+        .source-item .head { display: flex; justify-content: space-between; color: #6b7280; margin-bottom: 4px; }
+        .source-item .score { color: #2563eb; font-weight: 600; }
+        .error { color: #dc2626; font-size: 14px; margin-top: 10px; display: none; }
+        .loading { color: #6b7280; font-size: 14px; margin-top: 10px; display: none; }
+        form.process-form { display: flex; gap: 10px; }
+        form.process-form input {
+            flex: 1; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; font-size: 14px;
+        }
+        .result-line { font-size: 14px; color: #374151; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>📚 知识库问答</h1>
+        <a href="/">← 返回转换器</a>
+    </header>
+
+    <div class="card">
+        <h2>索引状态</h2>
+        <div class="status">
+            <span id="chunk-count">{{ chunk_count }}</span> 个块
+            <span style="opacity:.5">|</span>
+            目录: {{ kb_dir }}
+        </div>
+        <form class="process-form" id="process-form" style="margin-top:14px">
+            <input type="text" id="source-dir" placeholder="源文档目录路径（pdf/docx/xlsx/html/md），点击入库构建索引">
+            <button class="btn secondary" type="submit" id="process-btn">入库处理</button>
+        </form>
+        <div id="process-result" class="result-line"></div>
+    </div>
+
+    <div class="card">
+        <h2>向知识库提问</h2>
+        <textarea id="query" placeholder="例如：知识库的核心思想是什么？"></textarea>
+        <button class="btn" id="ask-btn">提问（检索 + AI 回答）</button>
+        <div class="loading" id="loading">正在检索并生成回答，请稍候…</div>
+        <div class="error" id="error"></div>
+        <div class="answer" id="answer">
+            <div class="meta" id="answer-meta"></div>
+            <div id="answer-text"></div>
+            <div class="sources" id="sources"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const askBtn = document.getElementById('ask-btn');
+const loading = document.getElementById('loading');
+const errorBox = document.getElementById('error');
+const answerBox = document.getElementById('answer');
+const answerMeta = document.getElementById('answer-meta');
+const answerText = document.getElementById('answer-text');
+const sourcesBox = document.getElementById('sources');
+
+askBtn.addEventListener('click', async () => {
+    const query = document.getElementById('query').value.trim();
+    if (!query) { showError('请输入问题'); return; }
+    askBtn.disabled = true; loading.style.display = 'block';
+    errorBox.style.display = 'none'; answerBox.classList.remove('show');
+
+    try {
+        const resp = await fetch('/kb/ask', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query, top_k: 4})
+        });
+        const data = await resp.json();
+        if (!data.success) { showError(data.error); return; }
+
+        answerText.textContent = data.answer;
+        answerMeta.textContent = data.llm_used ? '🤖 AI 生成回答' : '⚠️ 未使用 LLM（仅检索结果）' + (data.error ? ' — ' + data.error : '');
+        renderSources(data.sources);
+        answerBox.classList.add('show');
+    } catch (e) {
+        showError('请求失败: ' + e.message);
+    } finally {
+        askBtn.disabled = false; loading.style.display = 'none';
+    }
+});
+
+function renderSources(sources) {
+    sourcesBox.innerHTML = '';
+    if (!sources || !sources.length) return;
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:13px;color:#6b7280;margin:12px 0 4px;';
+    title.textContent = '📎 参考资料';
+    sourcesBox.appendChild(title);
+    sources.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'source-item';
+        item.innerHTML = `<div class="head">
+            <span>${escapeHtml(s.source)} · ${escapeHtml(s.section || '')}</span>
+            <span class="score">相似度 ${s.score.toFixed(3)}</span>
+        </div><div>${escapeHtml(s.text.slice(0, 200))}</div>`;
+        sourcesBox.appendChild(item);
+    });
+}
+
+const processForm = document.getElementById('process-form');
+const processBtn = document.getElementById('process-btn');
+const processResult = document.getElementById('process-result');
+
+processForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const sourceDir = document.getElementById('source-dir').value.trim();
+    if (!sourceDir) { processResult.textContent = '请填写源文档目录'; return; }
+    processBtn.disabled = true;
+    processResult.textContent = '正在转换、分块并建立索引…';
+    try {
+        const resp = await fetch('/kb/process', {method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({source_dir: sourceDir})});
+        const data = await resp.json();
+        if (!data.success) { processResult.textContent = '❌ ' + data.error; return; }
+        processResult.textContent = `✅ 转换 ${data.converted}/${data.total_files} 个文件 → ${data.chunks} 个块 → 索引 ${data.indexed} 条（引擎: ${data.embedder}）`;
+        document.getElementById('chunk-count').textContent = data.indexed;
+    } catch (err) {
+        processResult.textContent = '❌ 请求失败: ' + err.message;
+    } finally {
+        processBtn.disabled = false;
+    }
+});
+
+function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+}
+
+function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+</script>
+</body>
+</html>

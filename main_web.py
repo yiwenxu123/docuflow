@@ -448,6 +448,82 @@ def reset_stats():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+
+# ---- 知识库问答 ----
+
+KB_OUTPUT_DIR = os.path.expanduser(os.environ.get('DOCUFLOW_KB_DIR', '~/DocuFlow_KB'))
+
+
+@app.route('/kb')
+def kb_page():
+    """知识库问答页面"""
+    from converter.vector_store import VectorStore
+    index_dir = os.path.join(KB_OUTPUT_DIR, '.vector')
+    store = VectorStore(index_dir)
+    return render_template('kb.html', kb_dir=KB_OUTPUT_DIR, chunk_count=store.count())
+
+
+@app.route('/kb/process', methods=['POST'])
+def kb_process():
+    """处理源文档目录：转换 → 分块 → 索引"""
+    try:
+        data = request.get_json() or {}
+        source_dir = data.get('source_dir', '').strip()
+        if not source_dir or not os.path.exists(source_dir):
+            return jsonify({'success': False, 'error': '源目录不存在'}), 400
+
+        from converter.kb_pipeline import KnowledgeBasePipeline
+        from converter.vector_store import VectorStore, get_embedder
+
+        pipeline = KnowledgeBasePipeline()
+        stats = pipeline.run(source_dir, KB_OUTPUT_DIR)
+
+        store = VectorStore(os.path.join(KB_OUTPUT_DIR, '.vector'))
+        jsonl_path = os.path.join(KB_OUTPUT_DIR, 'chunks.jsonl')
+        embedder_name = 'hash'
+        try:
+            embedder = get_embedder(engine='auto')
+            added = store.add_from_jsonl(jsonl_path, embedder)
+            embedder_name = embedder.name()
+        except Exception as e:
+            # API 引擎失败自动降级本地哈希
+            embedder = get_embedder(engine='hash')
+            added = store.add_from_jsonl(jsonl_path, embedder)
+            embedder_name = f"hash（API 降级: {e}）"
+
+        return jsonify({
+            'success': True,
+            'converted': stats['converted'],
+            'total_files': stats['total_files'],
+            'chunks': stats['chunks'],
+            'indexed': store.count(),
+            'failed': stats['failed'],
+            'embedder': embedder_name,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/kb/ask', methods=['POST'])
+def kb_ask():
+    """知识库问答：检索 + LLM 生成"""
+    try:
+        data = request.get_json() or {}
+        query = (data.get('query') or '').strip()
+        if not query:
+            return jsonify({'success': False, 'error': '请输入问题'}), 400
+
+        from converter.llm_qa import answer_question
+        top_k = int(data.get('top_k', 4))
+        result = answer_question(
+            query,
+            os.path.join(KB_OUTPUT_DIR, '.vector'),
+            top_k=top_k,
+        )
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.errorhandler(413)
 def too_large(e):
     return jsonify({'success': False, 'error': '文件太大，请选择小于100MB的文件'}), 413

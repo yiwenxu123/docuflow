@@ -103,6 +103,24 @@ export DASHSCOPE_API_KEY=sk-xxx        # 或 OPENAI_API_KEY
 - API 调用失败（欠费/网络）时**自动降级**为本地引擎，索引不中断
 - DashScope 默认模型 `text-embedding-v3`，OpenAI 默认 `text-embedding-3-small`，可用 `OPENAI_EMBEDDING_MODEL` 或 `OPENAI_BASE_URL` 覆盖
 
+#### 7. 🌐 Web 知识库问答（RAG）
+启动 Web 版后访问 `http://localhost:5003/kb`：
+
+```bash
+./venv/bin/python3 main_web.py
+# 打开 http://localhost:5003/kb
+```
+
+- **入库处理**：填写源文档目录，自动完成 转换 → 分块 → 向量索引（知识库默认存 `~/DocuFlow_KB`，`DOCUFLOW_KB_DIR` 可覆盖）
+- **向知识库提问**：检索相关块 + LLM 生成回答（配置 `DASHSCOPE_API_KEY`/`OPENAI_API_KEY` 后自动启用，默认模型 qwen-plus）；无 key 或调用失败时自动降级为检索结果
+
+#### 8. 🍎 打包 .app（GUI 独立应用）
+```bash
+./venv/bin/pip install pyinstaller
+./venv/bin/pyinstaller DocuFlow.spec --noconfirm
+# 产物: dist/DocuFlow.app（双击即用，需系统已安装 pandoc）
+```
+
 ## 📦 系统要求（自动安装）
 - ✅ **macOS 10.15+**（自动检测）
 - ✅ **Homebrew**（自动安装）
