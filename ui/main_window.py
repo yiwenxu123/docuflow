@@ -38,6 +38,37 @@ class QTextEditLogger(logging.Handler):
         # 直接添加到widget，避免信号槽问题
         self.widget.append(msg)
 
+
+class IngestWorker(QObject):
+    """知识库投递后台任务"""
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, files, vault_dir, dest_subdir):
+        super().__init__()
+        self.files = files
+        self.vault_dir = vault_dir
+        self.dest_subdir = dest_subdir
+
+    def run(self):
+        from converter.kb_pipeline import KnowledgeBasePipeline
+        pipeline = KnowledgeBasePipeline()
+        try:
+            result = pipeline.ingest_to_vault(
+                self.files[0], self.vault_dir, dest_subdir=self.dest_subdir
+            )
+            # 多文件时逐个投递
+            for f in self.files[1:]:
+                extra = pipeline.ingest_to_vault(
+                    f, self.vault_dir, dest_subdir=self.dest_subdir
+                )
+                result["converted"].extend(extra["converted"])
+                result["failed"].extend(extra["failed"])
+                result["total_files"] += extra["total_files"]
+            self.finished.emit(result)
+        except Exception as e:
+            self.failed.emit(str(e))
+
 class ConversionWorker(QObject):
     conversion_finished = Signal(str)
     conversion_error = Signal(str)
@@ -156,8 +187,13 @@ class MainWindow(QMainWindow):
         self.start_conversion_button = QPushButton("开始转换")
         self.start_conversion_button.setStyleSheet("font-size: 16px; padding: 10px;")
 
+        self.ingest_button = QPushButton("📥 投递到知识库")
+        self.ingest_button.setToolTip("选择文件投递到 LLM Wiki 素材库（raw/sources），自动检测项目")
+        self.ingest_button.setStyleSheet("font-size: 15px; padding: 8px;")
+
         right_layout.addWidget(tab_widget)
         right_layout.addWidget(self.start_conversion_button)
+        right_layout.addWidget(self.ingest_button)
         
         tab_widget.addTab(settings_tab, "转换设置")
 
@@ -178,6 +214,7 @@ class MainWindow(QMainWindow):
         self.clear_files_button.clicked.connect(self.clear_files)
         self.browse_button.clicked.connect(self.browse_output_dir)
         self.start_conversion_button.clicked.connect(self.start_conversion)
+        self.ingest_button.clicked.connect(self.ingest_to_kb)
 
     def _setup_logging(self):
         # 清除现有的处理器，避免重复
@@ -249,6 +286,60 @@ class MainWindow(QMainWindow):
         directory = QFileDialog.getExistingDirectory(self, "选择输出目录")
         if directory:
             self.output_dir_edit.setText(directory)
+
+    def ingest_to_kb(self):
+        """一键投递素材到 LLM Wiki 知识库"""
+        from converter.kb_pipeline import detect_llmwiki_project, detect_obsidian_vault
+        vault_dir = detect_llmwiki_project() or detect_obsidian_vault()
+        if not vault_dir:
+            QMessageBox.warning(self, "提示", "未检测到 LLM Wiki 项目或 Obsidian vault")
+            return
+        if (Path(vault_dir) / ".llm-wiki").exists():
+            dest = "raw/sources/inbox"
+        else:
+            from converter.kb_pipeline import default_vault_dest
+            dest = default_vault_dest(vault_dir)
+
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "选择要投递的文件", "", "文档 (*.pdf *.docx *.xlsx *.md *.html *.txt)"
+        )
+        if not files:
+            return
+
+        self.ingest_button.setEnabled(False)
+        self.ingest_button.setText("投递中...")
+
+        self.ingest_thread = QThread(self)
+        self.ingest_worker = IngestWorker(files, vault_dir, dest)
+        self.ingest_worker.moveToThread(self.ingest_thread)
+        self.ingest_thread.started.connect(self.ingest_worker.run)
+        self.ingest_worker.finished.connect(self.ingest_done)
+        self.ingest_worker.failed.connect(self.ingest_failed)
+        self.ingest_worker.finished.connect(self.ingest_thread.quit)
+        self.ingest_worker.failed.connect(self.ingest_thread.quit)
+        self.ingest_thread.finished.connect(self.ingest_reset_button)
+        self.ingest_thread.start()
+
+    def ingest_done(self, result):
+        output_dir = result.get("output_dir", "")
+        total = result.get("total_files", 0)
+        converted = len(result.get("converted", []))
+        failed = result.get("failed", [])
+        msg = f"投递完成：{converted}/{total} 个文件 → {output_dir}"
+        if failed:
+            msg += f"\n\n⚠️ {len(failed)} 个失败："
+            for f in failed[:5]:
+                msg += f"\n• {Path(f['file']).name}: {f['error'][:60]}"
+        QMessageBox.information(self, "投递完成", msg)
+        logger.info(f"知识库投递: {converted}/{total} → {output_dir}")
+
+    def ingest_failed(self, error):
+        QMessageBox.critical(self, "投递失败", f"投递过程中发生错误：\n{error}")
+        logger.error(f"知识库投递失败: {error}")
+
+    def ingest_reset_button(self):
+        self.ingest_button.setEnabled(True)
+        self.ingest_button.setText("📥 投递到知识库")
 
     def start_conversion(self):
         """开始转换"""

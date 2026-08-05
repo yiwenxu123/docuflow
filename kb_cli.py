@@ -32,6 +32,7 @@ from typing import Optional
 
 from converter.kb_pipeline import (
     KBChunker, KnowledgeBasePipeline, detect_obsidian_vault, default_vault_dest,
+    detect_llmwiki_project, llmwiki_ingest_target,
 )
 from converter.vector_store import VectorStore, get_embedder
 
@@ -161,17 +162,22 @@ def cmd_search(args) -> int:
 
 
 def cmd_ingest(args) -> int:
-    """投递素材到 Obsidian vault"""
-    vault_dir = args.vault or detect_obsidian_vault()
+    """投递素材：优先 LLM Wiki 项目，其次 Obsidian vault"""
+    vault_dir = args.vault or detect_llmwiki_project() or detect_obsidian_vault()
     if not vault_dir:
-        print("❌ 未检测到 Obsidian vault，请用 --vault 指定路径", file=sys.stderr)
+        print("❌ 未检测到 LLM Wiki 项目或 Obsidian vault，请用 --vault 指定路径", file=sys.stderr)
         return 1
     vault_dir = os.path.expanduser(vault_dir)
     if not os.path.isdir(vault_dir):
-        print(f"❌ vault 路径不存在: {vault_dir}", file=sys.stderr)
+        print(f"❌ 目标路径不存在: {vault_dir}", file=sys.stderr)
         return 1
 
-    dest = args.dest or default_vault_dest(vault_dir)
+    # 智能目标：LLM Wiki 项目 → raw/sources/inbox；普通 vault → 按结构选择
+    if (Path(vault_dir) / ".llm-wiki").exists():
+        dest = args.dest or llmwiki_ingest_target(vault_dir)
+    else:
+        dest = args.dest or default_vault_dest(vault_dir)
+
     try:
         pipeline = KnowledgeBasePipeline()
         result = pipeline.ingest_to_vault(
@@ -186,7 +192,67 @@ def cmd_ingest(args) -> int:
         print(f"   ⚠️ {len(result['failed'])} 个文件失败:")
         for f in result["failed"]:
             print(f"      - {f['file']}: {f['error']}")
-    print("   下一步：在 Obsidian 中查看 01-raw，或让 LLM Wiki 流程自动接管")
+    if (Path(vault_dir) / ".llm-wiki").exists():
+        print("   下一步：LLM Wiki 将自动检测并处理这些素材（可在 Activity 面板查看）")
+    else:
+        print("   下一步：在 Obsidian 中查看素材目录")
+    return 0
+
+
+def cmd_status(args) -> int:
+    """查看知识库与 LLM Wiki 处理状态"""
+    try:
+        import json
+        from collections import Counter
+
+        project = args.project or detect_llmwiki_project()
+        if not project or not os.path.isdir(project):
+            print("❌ 未检测到 LLM Wiki 项目（--project 可指定）", file=sys.stderr)
+            return 1
+        project = os.path.expanduser(project)
+        llm_dir = Path(project) / ".llm-wiki"
+
+        print(f"📂 LLM Wiki 项目: {project}")
+        if not llm_dir.is_dir():
+            print("   （缺少 .llm-wiki 目录，项目状态未知）")
+            return 0
+
+        # 素材统计
+        sources = Path(project) / "raw" / "sources"
+        if sources.is_dir():
+            n_files = sum(1 for p in sources.rglob("*") if p.is_file())
+            print(f"📄 素材文件: {n_files} 个")
+
+        # 队列状态
+        queue_path = llm_dir / "ingest-queue.json"
+        if queue_path.exists():
+            q = json.loads(queue_path.read_text(encoding="utf-8"))
+            dist = dict(Counter(x.get("status", "unknown") for x in q))
+            pending = dist.get("pending", 0) + dist.get("processing", 0)
+            failed = dist.get("failed", 0)
+            print(f"⏳ ingest 队列: 待处理 {pending} | 成功 {dist.get('success', 0)} | 失败 {failed} | 其他 {dist.get('unknown', 0)}")
+            failed_items = [x for x in q if x.get("status") == "failed"][:5]
+            for x in failed_items:
+                print(f"      ✗ {x.get('sourcePath','')}: {str(x.get('error',''))[:60]}")
+
+        # 快照时间
+        snap_path = llm_dir / "file-snapshot.json"
+        if snap_path.exists():
+            snap = json.loads(snap_path.read_text(encoding="utf-8"))
+            ts = snap.get("updatedAt", 0)
+            from datetime import datetime
+            print(f"🕐 watch 快照: {datetime.fromtimestamp(ts/1000):%Y-%m-%d %H:%M:%S}")
+
+        # wiki 页面统计
+        wiki = Path(project) / "wiki"
+        if wiki.is_dir():
+            for sub in ["sources", "entities", "concepts"]:
+                d = wiki / sub
+                if d.is_dir():
+                    print(f"📖 wiki/{sub}: {sum(1 for p in d.glob('*.md'))} 页")
+    except Exception as e:
+        print(f"❌ 状态查询失败: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -209,12 +275,16 @@ def main() -> int:
     p_chunk.add_argument("--overlap", type=int, default=150)
     p_chunk.set_defaults(func=cmd_chunk)
 
-    p_ingest = sub.add_parser("ingest", help="投递素材到 Obsidian vault（自动检测或 --vault 指定）")
+    p_ingest = sub.add_parser("ingest", help="投递素材（自动检测 LLM Wiki 项目 / Obsidian vault）")
     p_ingest.add_argument("source", help="源文档文件或目录")
-    p_ingest.add_argument("--vault", help="Obsidian vault 路径（缺省自动检测当前打开的 vault）")
-    p_ingest.add_argument("--dest", help="vault 内目标子目录（缺省自动选择 01-raw/markitdown-output 等）")
+    p_ingest.add_argument("--vault", help="目标项目/vault 路径（缺省自动检测 LLM Wiki 项目，其次 Obsidian）")
+    p_ingest.add_argument("--dest", help="目标子目录（缺省 LLM Wiki: raw/sources/inbox）")
     p_ingest.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown 转换")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_status = sub.add_parser("status", help="查看 LLM Wiki 项目状态（队列/快照/wiki 页面）")
+    p_status.add_argument("--project", help="LLM Wiki 项目路径（缺省自动检测）")
+    p_status.set_defaults(func=cmd_status)
 
     p_index = sub.add_parser("index", help="从 chunks.jsonl 构建向量索引")
     p_index.add_argument("jsonl", help="chunks.jsonl 路径")

@@ -54,6 +54,36 @@ def detect_obsidian_vault() -> Optional[str]:
     return None
 
 
+def detect_llmwiki_project() -> Optional[str]:
+    """检测 LLM Wiki 当前项目路径
+
+    从 LLM Wiki 应用配置（com.llmwiki.app/app-state.json）读取，
+    优先返回最近打开的项目。
+    """
+    state_path = (Path.home() / "Library" / "Application Support"
+                  / "com.llmwiki.app" / "app-state.json")
+    if not state_path.exists():
+        return None
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    # 优先最近打开的项目
+    recent = data.get("recentProjects") or []
+    for rp in recent:
+        path = rp.get("path")
+        if path and (Path(path) / ".llm-wiki").exists():
+            return path
+
+    # 回退：projectRegistry 中任一含 .llm-wiki 的项目
+    for proj in (data.get("projectRegistry") or {}).values():
+        path = proj.get("path")
+        if path and (Path(path) / ".llm-wiki").exists():
+            return path
+    return None
+
+
 def default_vault_dest(vault_dir: str) -> str:
     """根据 vault 结构选择合适的素材接收目录"""
     vault = Path(vault_dir)
@@ -68,6 +98,15 @@ def default_vault_dest(vault_dir: str) -> str:
         if (vault / rel).exists():
             return rel
     return "01-raw/markitdown-output"
+
+
+def llmwiki_ingest_target(vault_dir: str, dest_subdir: str = "") -> str:
+    """LLM Wiki 项目的投递目标
+
+    默认投递到 raw/sources/inbox（LLM Wiki 会按 folderContext 自动归类），
+    也可显式指定 --dest 如 raw/sources/ai。
+    """
+    return dest_subdir or "raw/sources/inbox"
 
 
 @dataclass

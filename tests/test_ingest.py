@@ -13,6 +13,7 @@ import pytest
 
 from converter.kb_pipeline import (
     KnowledgeBasePipeline, default_vault_dest, detect_obsidian_vault,
+    detect_llmwiki_project, llmwiki_ingest_target,
 )
 
 
@@ -67,6 +68,46 @@ class TestVaultDestSelection:
 
     def test_fallback_default(self, tmp_path):
         assert default_vault_dest(str(tmp_path)) == "01-raw/markitdown-output"
+
+
+class TestLlmwikiDetection:
+    """LLM Wiki 项目检测与投递目标"""
+
+    def test_detect_project_from_recent(self, tmp_path, monkeypatch):
+        app_dir = tmp_path / "Library" / "Application Support" / "com.llmwiki.app"
+        app_dir.mkdir(parents=True)
+        project = tmp_path / "my-wiki"
+        (project / ".llm-wiki").mkdir(parents=True)
+        (app_dir / "app-state.json").write_text(json.dumps({
+            "recentProjects": [
+                {"path": str(project), "name": "my-wiki"},
+                {"path": "/old/project", "name": "old"},
+            ]
+        }), encoding="utf-8")
+        monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
+        assert detect_llmwiki_project() == str(project)
+
+    def test_detect_fallback_registry(self, tmp_path, monkeypatch):
+        app_dir = tmp_path / "Library" / "Application Support" / "com.llmwiki.app"
+        app_dir.mkdir(parents=True)
+        project = tmp_path / "wiki2"
+        (project / ".llm-wiki").mkdir(parents=True)
+        (app_dir / "app-state.json").write_text(json.dumps({
+            "recentProjects": [],
+            "projectRegistry": {"a": {"path": str(project)}},
+        }), encoding="utf-8")
+        monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
+        assert detect_llmwiki_project() == str(project)
+
+    def test_detect_none_when_no_config(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
+        assert detect_llmwiki_project() is None
+
+    def test_ingest_target_default_inbox(self, tmp_path):
+        assert llmwiki_ingest_target(str(tmp_path)) == "raw/sources/inbox"
+
+    def test_ingest_target_custom(self, tmp_path):
+        assert llmwiki_ingest_target(str(tmp_path), "raw/sources/ai") == "raw/sources/ai"
 
 
 class TestIngestToVault:

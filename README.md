@@ -66,26 +66,30 @@ DocuFlow 把**任意格式的文档**（PDF/DOCX/XLSX/网页/Gist 导出）转�
 # 访问 http://localhost:5003
 ```
 
-#### 5. 📥 投递素材到 Obsidian（核心用法）
-把任意格式的文档集转换为干净 Markdown，直接投递到 Obsidian vault 的原始素材层：
+#### 5. 📥 投递素材到知识库（核心用法）
+把任意格式的文档集转换为干净 Markdown，直接投递到 LLM Wiki 素材库（或 Obsidian vault）：
 
 ```bash
-# 一键投递：自动检测当前打开的 Obsidian vault，输出到 01-raw/markitdown-output/
+# 一键投递：自动检测 LLM Wiki 项目 → my-wiki/raw/sources/inbox（LLM Wiki 自动接管）
 ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理
 
-# 指定 vault 与目标子目录
-./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 \
-    --vault ~/Documents/我的123 --dest 01-raw/inbox
+# 指定分类目录
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --dest raw/sources/ai
 
 # 优先用 MarkItDown（高质量 LLM 输出）
 ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --markitdown
+
+# 查看 LLM Wiki 处理状态（队列进度 / watch 快照 / wiki 页面数）
+./venv/bin/python3 kb_cli.py status
+
+# GUI 版：主界面点击「📥 投递到知识库」按钮，选文件即投递
 ```
 
 **行为**：
-- 自动从 Obsidian 配置检测当前打开的 vault（`--vault` 可覆盖）
-- 目标目录自动选择：`01-raw/markitdown-output` → `01-raw/inbox` → `01-raw` → `raw/sources` → `Inbox`（`--dest` 可覆盖）
+- 自动检测：优先 LLM Wiki 项目（读其应用配置），其次 Obsidian 当前打开的 vault
+- LLM Wiki 项目默认投递到 `raw/sources/inbox`（LLM Wiki 按 folderContext 自动归类），普通 vault 自动选择 01-raw 结构
 - 转换时自动去除 Gist/HTML 页面结构残留，非 Markdown 源文件带格式后缀命名避免冲突
-- 投递完成后，在 Obsidian 中由你的 LLM Wiki / AI 工作流自动接管生成 wiki
+- 投递后 LLM Wiki 的 Source Auto-Watch 自动检测并生成 wiki
 
 #### 6. 🧠 通用能力（可选）：分块 / 向量检索 / 问答
 > ⚠️ 如果你使用 Obsidian + LLM Wiki（自带 lancedb 语义检索），以下功能可跳过。
