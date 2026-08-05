@@ -109,6 +109,36 @@ def llmwiki_ingest_target(vault_dir: str, dest_subdir: str = "") -> str:
     return dest_subdir or "raw/sources/inbox"
 
 
+# 文件名关键词 → raw/sources 分类（自动分类用）
+CLASSIFY_KEYWORDS = {
+    "ai": ["ai", "agent", "智能体", "大模型", "llm", "gpt", "claude", "deepseek", "prompt", "rag", "ai工具", "知识管理"],
+    "books": ["书", "book", "读书", "阅读", "读者", "名著"],
+    "writing": ["写作", "文案", "文笔", "妙笔", "稿", "公众号", "标题", "开头", "结尾"],
+    "methodology": ["方法论", "framework", "框架", "模式", "流程", "方法"],
+    "clippings": ["剪藏", "clip", "收藏"],
+    "evaluations": ["评估", "评价", "评测", "分析"],
+}
+
+
+def classify_source(filename: str) -> str:
+    """按文件名关键词自动分类
+
+    命中多个分类时取首个（关键词顺序即优先级）；
+    无命中返回 "inbox"（保守策略，交由 LLM Wiki 归类）。
+    """
+    name = filename.lower()
+    for category, keywords in CLASSIFY_KEYWORDS.items():
+        for kw in keywords:
+            if kw.lower() in name:
+                return category
+    return "inbox"
+
+
+def auto_ingest_target(vault_dir: str, filename: str) -> str:
+    """LLM Wiki 项目投递目标：按文件名自动分类"""
+    return f"raw/sources/{classify_source(filename)}"
+
+
 @dataclass
 class Chunk:
     """单个知识库块"""
@@ -339,14 +369,39 @@ class KnowledgeBasePipeline:
 
         return stats
 
-    def _discover_files(self, source_dir: str) -> List[Path]:
-        root = Path(source_dir)
-        if root.is_file():
-            return [root] if root.suffix.lower() in SUPPORTED_SOURCE_EXTS else []
-        return sorted(
-            p for p in root.rglob("*")
-            if p.is_file() and p.suffix.lower() in SUPPORTED_SOURCE_EXTS
-        )
+    def ingest_auto(self, source_dir: str, vault_dir: str,
+                    use_markitdown: bool = False) -> Dict[str, Any]:
+        """按文件名自动分类投递到 LLM Wiki 素材库（raw/sources/<分类>/）
+
+        Args:
+            source_dir: 源文档文件或目录
+            vault_dir: LLM Wiki 项目路径
+            use_markitdown: 优先使用 MarkItDown 转换
+
+        Returns:
+            统计信息 dict
+        """
+        files = self._discover_files(source_dir)
+        converted, failed = [], []
+        output_dirs = set()
+        for src in files:
+            dest = auto_ingest_target(vault_dir, src.name)
+            target = Path(vault_dir) / dest
+            target.mkdir(parents=True, exist_ok=True)
+            try:
+                out = self._convert_one(src, target, use_markitdown)
+                converted.append(str(out))
+                output_dirs.add(dest)
+            except Exception as e:
+                failed.append({"file": str(src), "error": str(e)})
+
+        return {
+            "converted": converted,
+            "failed": failed,
+            "total_files": len(files),
+            "output_dir": str(Path(vault_dir) / "raw" / "sources"),
+            "dest_dirs": sorted(output_dirs),
+        }
 
     def ingest_to_vault(self, source_dir: str, vault_dir: str,
                         dest_subdir: str = "", use_markitdown: bool = False) -> Dict[str, Any]:
@@ -382,6 +437,15 @@ class KnowledgeBasePipeline:
             "output_dir": str(target),
             "total_files": len(files),
         }
+
+    def _discover_files(self, source_dir: str) -> List[Path]:
+        root = Path(source_dir)
+        if root.is_file():
+            return [root] if root.suffix.lower() in SUPPORTED_SOURCE_EXTS else []
+        return sorted(
+            p for p in root.rglob("*")
+            if p.is_file() and p.suffix.lower() in SUPPORTED_SOURCE_EXTS
+        )
 
     def _convert_one(self, src: Path, md_dir: Path, use_markitdown: bool) -> Path:
         """转换单个文件为 Markdown，返回输出路径"""

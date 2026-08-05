@@ -172,22 +172,35 @@ def cmd_ingest(args) -> int:
         print(f"❌ 目标路径不存在: {vault_dir}", file=sys.stderr)
         return 1
 
-    # 智能目标：LLM Wiki 项目 → raw/sources/inbox；普通 vault → 按结构选择
+    # 智能目标：LLM Wiki 项目 → 自动分类投递；普通 vault → 按结构选择
     if (Path(vault_dir) / ".llm-wiki").exists():
-        dest = args.dest or llmwiki_ingest_target(vault_dir)
+        try:
+            pipeline = KnowledgeBasePipeline()
+            if args.dest:
+                result = pipeline.ingest_to_vault(
+                    args.source, vault_dir, dest_subdir=args.dest, use_markitdown=args.markitdown
+                )
+                dest_desc = args.dest
+            else:
+                result = pipeline.ingest_auto(args.source, vault_dir, use_markitdown=args.markitdown)
+                dest_desc = "自动分类 → " + ", ".join(result.get("dest_dirs", []))
+        except Exception as e:
+            print(f"❌ 投递失败: {e}", file=sys.stderr)
+            return 1
     else:
         dest = args.dest or default_vault_dest(vault_dir)
+        try:
+            pipeline = KnowledgeBasePipeline()
+            result = pipeline.ingest_to_vault(
+                args.source, vault_dir, dest_subdir=dest, use_markitdown=args.markitdown
+            )
+            dest_desc = dest
+        except Exception as e:
+            print(f"❌ 投递失败: {e}", file=sys.stderr)
+            return 1
 
-    try:
-        pipeline = KnowledgeBasePipeline()
-        result = pipeline.ingest_to_vault(
-            args.source, vault_dir, dest_subdir=dest, use_markitdown=args.markitdown
-        )
-    except Exception as e:
-        print(f"❌ 投递失败: {e}", file=sys.stderr)
-        return 1
-
-    print(f"✅ 投递完成: {len(result['converted'])}/{result['total_files']} 个文件 → {result['output_dir']}")
+    print(f"✅ 投递完成: {len(result['converted'])}/{result['total_files']} 个文件")
+    print(f"   目标: {result['output_dir']} ({dest_desc})")
     if result["failed"]:
         print(f"   ⚠️ {len(result['failed'])} 个文件失败:")
         for f in result["failed"]:
@@ -197,6 +210,70 @@ def cmd_ingest(args) -> int:
     else:
         print("   下一步：在 Obsidian 中查看素材目录")
     return 0
+
+
+def cmd_watch(args) -> int:
+    """桌面投递箱：监听文件夹，新文件自动投递到知识库"""
+    import shutil
+    import time
+
+    box = Path(os.path.expanduser(args.box))
+    box.mkdir(parents=True, exist_ok=True)
+    processed_dir = box / "_processed"
+    failed_dir = box / "_failed"
+    processed_dir.mkdir(exist_ok=True)
+    failed_dir.mkdir(exist_ok=True)
+
+    vault_dir = args.vault or detect_llmwiki_project() or detect_obsidian_vault()
+    if not vault_dir:
+        print("❌ 未检测到 LLM Wiki 项目或 Obsidian vault（--vault 可指定）", file=sys.stderr)
+        return 1
+    is_llmwiki = (Path(vault_dir) / ".llm-wiki").exists()
+
+    # 初始化：把投递箱里已有的文件先处理一轮（避免积压）
+    print(f"📥 投递箱: {box}")
+    print(f"🎯 目标: {vault_dir}（{'LLM Wiki 自动分类' if is_llmwiki else 'Obsidian'}）")
+    print(f"⏱️  扫描间隔: {args.interval} 秒（Ctrl+C 退出）\n")
+
+    pipeline = KnowledgeBasePipeline()
+    while True:
+        try:
+            pending = [
+                p for p in box.iterdir()
+                if p.is_file() and p.suffix.lower() in {".pdf", ".docx", ".xlsx", ".md", ".txt", ".html", ".htm"}
+            ]
+            for src in pending:
+                try:
+                    if is_llmwiki and not args.dest:
+                        result = pipeline.ingest_auto(str(src), vault_dir, use_markitdown=args.markitdown)
+                        dest_desc = "自动分类"
+                    else:
+                        dest = args.dest or (llmwiki_ingest_target(vault_dir) if is_llmwiki else default_vault_dest(vault_dir))
+                        result = pipeline.ingest_to_vault(str(src), vault_dir, dest_subdir=dest, use_markitdown=args.markitdown)
+                        dest_desc = dest
+                    if result["failed"]:
+                        raise RuntimeError(result["failed"][0]["error"])
+                    stamp = time.strftime("%H:%M:%S")
+                    print(f"[{stamp}] ✓ {src.name} → {dest_desc}")
+                    shutil.move(str(src), str(processed_dir / src.name))
+                except Exception as e:
+                    stamp = time.strftime("%H:%M:%S")
+                    print(f"[{stamp}] ✗ {src.name}: {e}")
+                    try:
+                        shutil.move(str(src), str(failed_dir / src.name))
+                    except OSError:
+                        pass
+        except KeyboardInterrupt:
+            print("\n👋 投递箱已停止")
+            return 0
+        except Exception as e:
+            print(f"⚠️ 扫描出错: {e}")
+
+        try:
+            time.sleep(args.interval)
+        except KeyboardInterrupt:
+            print("\n👋 投递箱已停止")
+            return 0
 
 
 def cmd_status(args) -> int:
@@ -285,6 +362,14 @@ def main() -> int:
     p_status = sub.add_parser("status", help="查看 LLM Wiki 项目状态（队列/快照/wiki 页面）")
     p_status.add_argument("--project", help="LLM Wiki 项目路径（缺省自动检测）")
     p_status.set_defaults(func=cmd_status)
+
+    p_watch = sub.add_parser("watch", help="桌面投递箱：监听文件夹，新文件自动投递入库")
+    p_watch.add_argument("--box", default="~/Documents/素材投递箱", help="投递箱目录（默认 ~/Documents/素材投递箱）")
+    p_watch.add_argument("--vault", help="目标项目/vault 路径（缺省自动检测）")
+    p_watch.add_argument("--dest", help="固定目标子目录（缺省 LLM Wiki 自动分类）")
+    p_watch.add_argument("--interval", type=int, default=30, help="扫描间隔秒数（默认 30）")
+    p_watch.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown 转换")
+    p_watch.set_defaults(func=cmd_watch)
 
     p_index = sub.add_parser("index", help="从 chunks.jsonl 构建向量索引")
     p_index.add_argument("jsonl", help="chunks.jsonl 路径")

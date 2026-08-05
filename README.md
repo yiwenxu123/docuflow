@@ -87,9 +87,31 @@ DocuFlow 把**任意格式的文档**（PDF/DOCX/XLSX/网页/Gist 导出）转�
 
 **行为**：
 - 自动检测：优先 LLM Wiki 项目（读其应用配置），其次 Obsidian 当前打开的 vault
-- LLM Wiki 项目默认投递到 `raw/sources/inbox`（LLM Wiki 按 folderContext 自动归类），普通 vault 自动选择 01-raw 结构
+- LLM Wiki 项目默认**按文件名自动分类**（AI/写作/方法论/书籍等关键词 → `raw/sources/<分类>/`，未命中进 inbox）
+- 普通 vault 自动选择 01-raw 结构；`--dest` 可固定目标
 - 转换时自动去除 Gist/HTML 页面结构残留，非 Markdown 源文件带格式后缀命名避免冲突
 - 投递后 LLM Wiki 的 Source Auto-Watch 自动检测并生成 wiki
+
+#### 5.1 📥 桌面投递箱（拖入即入库）
+监听固定文件夹，新文件自动投递 + 自动分类，无需任何命令：
+
+```bash
+# 启动投递箱（默认监听 ~/Documents/素材投递箱）
+./venv/bin/python3 kb_cli.py watch
+
+# 自定义投递箱与扫描间隔
+./venv/bin/python3 kb_cli.py watch --box ~/Downloads/待整理 --interval 60
+```
+
+把文件拖入投递箱即自动转换投递到知识库；已处理文件移入 `_processed/`，失败移入 `_failed/`。
+
+#### 5.2 ✂️ 剪藏统一（Obsidian Web Clipper）
+- **Obsidian Web Clipper**（浏览器插件）：剪藏目标设置为 `my-wiki/raw/sources/inbox`（素材直接进 LLM Wiki 素材库，watch 自动处理）
+- **微信读书/公众号导出**：导出 md 后直接复制到 `my-wiki/raw/sources/inbox`，或丢进桌面投递箱
+- **手机端素材**：用任意方式传到 Mac 后丢进投递箱即可
+
+> 约定：所有需要 LLM Wiki 处理的素材最终汇入 `~/Documents/my-wiki/raw/sources/`，
+> 入口可以是剪藏插件、投递箱、DocuFlow GUI 或直接拖拽，LLM Wiki 统一接管。
 
 #### 6. 🧠 通用能力（可选）：分块 / 向量检索 / 问答
 > ⚠️ 如果你使用 Obsidian + LLM Wiki（自带 lancedb 语义检索），以下功能可跳过。
