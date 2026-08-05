@@ -1,16 +1,28 @@
 # DocuFlow 文档转换工具 🎯
 
-## ✅ 终极解决方案 - 双击即用
+## 📌 定位：知识库素材预处理工具（Obsidian 的"原料车间"）
+
+DocuFlow 把**任意格式的文档**（PDF/DOCX/XLSX/网页/Gist 导出）转换为**干净的、LLM 友好的 Markdown**，投递到你的 Obsidian 知识库原始素材层，由你现有的 LLM Wiki / AI 工作流自动接管生成 wiki。
+
+```
+任意文档 → DocuFlow（拖拽/批量/深度清洗）→ 01-raw/markitdown-output/
+    → Obsidian + LLM Wiki（lancedb 检索 + wiki 自动生成）接管
+```
+
+> 💡 **与 LLM Wiki 的分工**：LLM Wiki 负责"知识编译"（raw → wiki 页面的自动生成与语义检索）；DocuFlow 负责"素材预处理"（把 PDF/DOCX/网页变成干净 Markdown 送进 raw 层）。两者互补，不重复。
+
+## ✅ 双击即用
 
 ### 🚀 推荐启动方式
 **双击 `DocuFlow-极速启动器.command`** - 自动检测环境、安装依赖并启动
 
-### 🎯 新功能特性
+### 🎯 特性
 - ✅ **全自动安装**：Homebrew + pandoc + Python依赖
 - ✅ **智能检测**：自动识别系统环境
 - ✅ **国内镜像**：使用清华镜像源，安装更快
-- ✅ **详细日志**：完整安装过程记录
-- ✅ **错误恢复**：提供多种备选方案
+- ✅ **拖拽/批量转换**：支持文件夹批量处理
+- ✅ **深度清洗**：自动去除 Gist/HTML 页面结构残留（`gist.github.com`、CSS 类名、文件路径引用等）
+- ✅ **MarkItDown 引擎**：高质量 LLM 友好输出
 
 ### 📋 支持的格式转换
 | 输入格式 | 可转输出格式 |
@@ -22,7 +34,7 @@
 | **Markdown** → | PDF, DOCX, HTML, EPUB |
 | **HTML** → | PDF, DOCX, Markdown |
 
-## 🖥️ 三种使用方式
+## 🖥️ 使用方式
 
 #### 1. ⚡ 极速启动器（强烈推荐）
 ```bash
@@ -54,67 +66,48 @@
 # 访问 http://localhost:5003
 ```
 
-#### 5. 🧠 知识库管道（LLM/RAG 友好）
-把文档集一键转换为**干净 Markdown + 结构化分块（JSONL）**，可直接喂给 LLM/RAG 知识库：
+#### 5. 📥 投递素材到 Obsidian（核心用法）
+把任意格式的文档集转换为干净 Markdown，直接投递到 Obsidian vault 的原始素材层：
 
 ```bash
-# 处理文件夹（递归扫描 pdf/docx/xlsx/html/md）
+# 一键投递：自动检测当前打开的 Obsidian vault，输出到 01-raw/markitdown-output/
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理
+
+# 指定 vault 与目标子目录
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 \
+    --vault ~/Documents/我的123 --dest 01-raw/inbox
+
+# 优先用 MarkItDown（高质量 LLM 输出）
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --markitdown
+```
+
+**行为**：
+- 自动从 Obsidian 配置检测当前打开的 vault（`--vault` 可覆盖）
+- 目标目录自动选择：`01-raw/markitdown-output` → `01-raw/inbox` → `01-raw` → `raw/sources` → `Inbox`（`--dest` 可覆盖）
+- 转换时自动去除 Gist/HTML 页面结构残留，非 Markdown 源文件带格式后缀命名避免冲突
+- 投递完成后，在 Obsidian 中由你的 LLM Wiki / AI 工作流自动接管生成 wiki
+
+#### 6. 🧠 通用能力（可选）：分块 / 向量检索 / 问答
+> ⚠️ 如果你使用 Obsidian + LLM Wiki（自带 lancedb 语义检索），以下功能可跳过。
+> 保留它们是为了让 DocuFlow 在不依赖 Obsidian 的场景下也能构建独立知识库。
+
+```bash
+# 构建独立知识库管道：转换 → 语义分块（JSONL）
 ./venv/bin/python3 kb_cli.py process ~/Documents/sources ~/kb_out
 
-# 优先使用 MarkItDown（高质量 LLM 输出）
-./venv/bin/python3 kb_cli.py process ~/sources ~/kb_out --markitdown
-
-# 仅对已有 Markdown 目录分块
-./venv/bin/python3 kb_cli.py chunk ~/kb_out/md ~/kb_out/chunks.jsonl
-
-# 自定义块大小与重叠
-./venv/bin/python3 kb_cli.py process ~/sources ~/kb_out --chunk-size 800 --overlap 100
-```
-
-**输出**：
-- `md/`：转换后的干净 Markdown（按标题清理 Gist/HTML 残留）
-- `chunks.jsonl`：语义分块（按标题层级切分，保留"父标题 > 子标题"上下文与相邻块重叠），每条含 `id/source/title/section/chunk_index/text` 元数据
-- `manifest.json`：处理统计与失败清单
-
-#### 6. 🔍 向量检索（本地语义搜索）
-对知识库构建向量索引并语义检索（零依赖，本地隐私）：
-
-```bash
-# 构建向量索引（默认 auto：有 API key 用高质量 Embedding，否则本地离线引擎）
+# 向量索引 + 语义检索（无 API key 时自动用本地离线引擎，失败自动降级）
 ./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector
-
-# 语义检索
 ./venv/bin/python3 kb_cli.py search "知识库的核心理念" ~/kb_out/.vector --top-k 5
 
-# 按来源文件过滤
-./venv/bin/python3 kb_cli.py search "查询" ~/kb_out/.vector --source llm-wiki
-
-# 使用 OpenAI 兼容 API（OpenAI / DashScope 通义）获得高质量检索
-export DASHSCOPE_API_KEY=sk-xxx        # 或 OPENAI_API_KEY
-./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector --engine openai
-./venv/bin/python3 kb_cli.py search "..." ~/kb_out/.vector --engine openai
-
-# 强制本地离线引擎（不调用任何 API）
-./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector --engine hash
-```
-
-**说明**：
-- `--engine auto`（默认）：检测到 `OPENAI_API_KEY`/`DASHSCOPE_API_KEY` 时用 API Embedding，否则用本地哈希引擎（离线可用）
-- API 调用失败（欠费/网络）时**自动降级**为本地引擎，索引不中断
-- DashScope 默认模型 `text-embedding-v3`，OpenAI 默认 `text-embedding-3-small`，可用 `OPENAI_EMBEDDING_MODEL` 或 `OPENAI_BASE_URL` 覆盖
-
-#### 7. 🌐 Web 知识库问答（RAG）
-启动 Web 版后访问 `http://localhost:5003/kb`：
-
-```bash
+# Web 问答页（RAG）：启动 Web 后访问 http://localhost:5003/kb
 ./venv/bin/python3 main_web.py
-# 打开 http://localhost:5003/kb
 ```
 
-- **入库处理**：填写源文档目录，自动完成 转换 → 分块 → 向量索引（知识库默认存 `~/DocuFlow_KB`，`DOCUFLOW_KB_DIR` 可覆盖）
-- **向知识库提问**：检索相关块 + LLM 生成回答（配置 `DASHSCOPE_API_KEY`/`OPENAI_API_KEY` 后自动启用，默认模型 qwen-plus）；无 key 或调用失败时自动降级为检索结果
+- Embedding 引擎：检测到 `OPENAI_API_KEY`/`DASHSCOPE_API_KEY` 时用 API，否则本地哈希引擎（离线）
+- API 调用失败（欠费/网络）时**自动降级**为本地引擎
+- DashScope 默认模型 `text-embedding-v3`，OpenAI 默认 `text-embedding-3-small`
 
-#### 8. 🍎 打包 .app（GUI 独立应用）
+#### 7. 🍎 打包 .app（GUI 独立应用）
 ```bash
 ./venv/bin/pip install pyinstaller
 ./venv/bin/pyinstaller DocuFlow.spec --noconfirm
@@ -171,6 +164,7 @@ export DASHSCOPE_API_KEY=sk-xxx        # 或 OPENAI_API_KEY
 - 💾 **记忆功能**：记住上次使用的设置
 
 ## 🔄 更新说明
-- **v1.2.0**：知识库管道 + 向量检索（分块/索引/语义搜索）
+- **v1.3.0**：Obsidian 素材投递（ingest）、定位调整、通用能力标注
+- **v1.2.0**：Web 问答、RAG 模块、CI、.app 打包
 - **v1.1.0**：模块化重构、批量转换、测试套件（78 用例）
 - **v1.0**：基础文档转换功能（GUI/Web/CLI 三端）

@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DocuFlow 知识库管道 CLI
+DocuFlow 素材处理 CLI
 
-把文档集转换为 LLM/RAG 友好的结构化块，并支持向量索引与语义检索：
+核心用法（Obsidian 素材预处理）：
 
-    # 处理一个文件夹（递归）或单文件
+    # 投递文档集到 Obsidian vault（自动检测当前打开的 vault，输出到 01-raw/markitdown-output）
+    ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理
+
+    # 指定 vault 与目标子目录
+    ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --vault ~/Documents/我的123 --dest 01-raw/inbox
+
+    # 优先用 MarkItDown（高质量 LLM 输出）
+    ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --markitdown
+
+通用能力（可选）：
+
+    # 构建独立知识库管道（转换 → 分块 → chunks.jsonl）
     ./venv/bin/python3 kb_cli.py process ~/Documents/sources ~/kb_out
 
-    # 仅分块已有的 Markdown 目录
-    ./venv/bin/python3 kb_cli.py chunk ~/kb_out/md ~/kb_out/chunks.jsonl
-
-    # 构建向量索引（无 API key 时自动用本地哈希引擎，离线可用）
+    # 向量索引与语义检索（可选，Obsidian 用户可用 LLM Wiki 的 lancedb 代替）
     ./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector
-
-    # 语义检索
     ./venv/bin/python3 kb_cli.py search "知识库的核心理念" ~/kb_out/.vector --top-k 5
-
-    # 用 OpenAI 兼容 API（DashScope 等）获得高质量检索：
-    #   export DASHSCOPE_API_KEY=sk-xxx
-    #   ./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector --engine openai
-    #   ./venv/bin/python3 kb_cli.py search "..." ~/kb_out/.vector --engine openai
-
-    # 用 MarkItDown 优先转换（高质量 LLM 输出）
-    ./venv/bin/python3 kb_cli.py process ~/sources ~/kb_out --markitdown
 """
 
 import argparse
@@ -32,7 +30,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from converter.kb_pipeline import KBChunker, KnowledgeBasePipeline
+from converter.kb_pipeline import (
+    KBChunker, KnowledgeBasePipeline, detect_obsidian_vault, default_vault_dest,
+)
 from converter.vector_store import VectorStore, get_embedder
 
 
@@ -160,6 +160,36 @@ def cmd_search(args) -> int:
     return 0
 
 
+def cmd_ingest(args) -> int:
+    """投递素材到 Obsidian vault"""
+    vault_dir = args.vault or detect_obsidian_vault()
+    if not vault_dir:
+        print("❌ 未检测到 Obsidian vault，请用 --vault 指定路径", file=sys.stderr)
+        return 1
+    vault_dir = os.path.expanduser(vault_dir)
+    if not os.path.isdir(vault_dir):
+        print(f"❌ vault 路径不存在: {vault_dir}", file=sys.stderr)
+        return 1
+
+    dest = args.dest or default_vault_dest(vault_dir)
+    try:
+        pipeline = KnowledgeBasePipeline()
+        result = pipeline.ingest_to_vault(
+            args.source, vault_dir, dest_subdir=dest, use_markitdown=args.markitdown
+        )
+    except Exception as e:
+        print(f"❌ 投递失败: {e}", file=sys.stderr)
+        return 1
+
+    print(f"✅ 投递完成: {len(result['converted'])}/{result['total_files']} 个文件 → {result['output_dir']}")
+    if result["failed"]:
+        print(f"   ⚠️ {len(result['failed'])} 个文件失败:")
+        for f in result["failed"]:
+            print(f"      - {f['file']}: {f['error']}")
+    print("   下一步：在 Obsidian 中查看 01-raw，或让 LLM Wiki 流程自动接管")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="DocuFlow 知识库管道")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -178,6 +208,13 @@ def main() -> int:
     p_chunk.add_argument("--chunk-size", type=int, default=1500)
     p_chunk.add_argument("--overlap", type=int, default=150)
     p_chunk.set_defaults(func=cmd_chunk)
+
+    p_ingest = sub.add_parser("ingest", help="投递素材到 Obsidian vault（自动检测或 --vault 指定）")
+    p_ingest.add_argument("source", help="源文档文件或目录")
+    p_ingest.add_argument("--vault", help="Obsidian vault 路径（缺省自动检测当前打开的 vault）")
+    p_ingest.add_argument("--dest", help="vault 内目标子目录（缺省自动选择 01-raw/markitdown-output 等）")
+    p_ingest.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown 转换")
+    p_ingest.set_defaults(func=cmd_ingest)
 
     p_index = sub.add_parser("index", help="从 chunks.jsonl 构建向量索引")
     p_index.add_argument("jsonl", help="chunks.jsonl 路径")

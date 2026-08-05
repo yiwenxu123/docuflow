@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-04
+
+### 新增
+- `kb_cli.py ingest`：投递素材到 Obsidian vault（自动检测当前打开的 vault，默认输出到 `01-raw/markitdown-output/`），与 Obsidian + LLM Wiki 工作流衔接
+- `converter/kb_pipeline.py`：`detect_obsidian_vault` / `default_vault_dest` / `ingest_to_vault`
+
+### 变更
+- 项目定位调整：**知识库素材预处理工具**（Obsidian 的"原料车间"），分块/向量检索/问答降级为可选通用能力
+- README 重构：ingest 为核心用法，明确与 LLM Wiki 的分工
+
+### 新增测试
+- `tests/test_ingest.py`：vault 检测、目标目录选择、投递逻辑（10 用例）
+
 ## [1.2.0] - 2026-08-04
 
 ### 新增
