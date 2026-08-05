@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 变更
+- 知识库工作流闭环：my-wiki 从主 vault 迁出为独立 Obsidian vault（`~/Documents/my-wiki`），
+  素材层符号链接替换为真实目录，LLM Wiki Source Auto-Watch 对当前项目生效，
+  DocuFlow ingest → raw/sources → 自动 wiki 生成全链路打通
+
 ## [1.3.0] - 2026-08-04
 
 ### 新增
