@@ -27,7 +27,8 @@ DocuFlow 现在只做一件事：
 - Frontmatter：来源、时间、转换器、引擎、内容哈希、语言、页数、附件数；
 - 报告：每次运行生成 `runs/<id>.json`，支持 `--json`；
 - 状态：SQLite 记录在 `~/Library/Application Support/DocuFlow/state.db`；
-- 自检：`doctor` 检查 pandoc、MarkItDown、OCR、vault 和收件箱。
+- 自检：`doctor` 检查 pandoc、MarkItDown、OCR、vault 和收件箱；
+- 桌面入口：简化 GUI、Finder 右键快捷动作、launchd 后台监听投递箱。
 
 ## 安装
 
@@ -101,14 +102,57 @@ brew install ocrmypdf tesseract tesseract-lang
 
 或双击 `DocuFlow-极速启动器.command`。启动器只检查 pandoc 和 venv，不会静默安装 Homebrew 或依赖。
 
-GUI 有两个动作：
+GUI 只有一个主按钮“转换并投递”：
 
-- **开始转换**：只转换到指定目录；
-- **投递到知识库**：转换、去重并投递到 Obsidian 收件箱。
+- 选择目标 vault；
+- 确认收件箱（默认 `01-raw/inbox`）；
+- 选择 OCR 策略，可勾选 MarkItDown；
+- 完成后可直接打开收件箱。
 
-Phase 4 会把两个动作合并成一个“转换并投递”。
+GUI 不再提供“仅转换”入口；需要只转换时使用下面的 CLI。
 
-### 4. 仅转换，不投递
+### 4. Finder 快捷动作
+
+安装：
+
+```bash
+./scripts/install_finder_action.sh
+```
+
+安装后，在 Finder 中选中文件或文件夹，右键选择“用 DocuFlow 投递到知识库”。结果写入 `~/Library/Logs/DocuFlow-finder.log`，并通过系统通知反馈。
+
+如果右键菜单没有出现，请在“系统设置 > 通用 > 登录项与扩展 > Finder 扩展/快捷动作”中启用，或重启 Finder。
+
+可用环境变量：
+
+- `DOCUFLOW_VAULT`：指定 vault；
+- `DOCUFLOW_DEST`：指定收件箱；
+- `DOCUFLOW_OCR=off`：关闭 OCR；
+- `DOCUFLOW_MARKITDOWN=1`：优先 MarkItDown。
+
+### 5. 后台监听投递箱（launchd）
+
+```bash
+# 先看将写入的 LaunchAgent，不实际加载
+DOCUFLOW_BOX=~/Documents/素材投递箱 ./scripts/install_watch_service.sh --dry-run
+
+# 安装并启动
+DOCUFLOW_BOX=~/Documents/素材投递箱 ./scripts/install_watch_service.sh
+
+# 卸载
+./scripts/uninstall_watch_service.sh
+```
+
+监听行为：
+
+- 投递箱顶层的文件和文件夹都会被处理；
+- 文件稳定一轮后才处理，避免复制到一半被读取；
+- 成功后移入 `_processed/`，失败移入 `_failed/`，不支持的文件移入 `_unsupported/`；
+- 加 `--keep-originals` 可保留原文件；
+- `--once` 只处理一轮，便于调试；
+- 日志：`~/Library/Logs/DocuFlow-watch.log`。
+
+### 6. 仅转换，不投递
 
 ```bash
 ./venv/bin/python3 cli.py input.docx -f .md
@@ -182,13 +226,12 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-当前测试覆盖：核心转换、CLI、错误处理、HTML 正文抽取、MarkItDown、Obsidian 检测、frontmatter、状态库、去重、不覆盖、dry-run、图片附件、OCR 检测、20 文件二次投递。
+当前测试覆盖：核心转换、CLI、错误处理、HTML 正文抽取、MarkItDown、Obsidian 检测、frontmatter、状态库、去重、不覆盖、dry-run、图片附件、OCR 检测、watch 命令、20 文件二次投递。
 
 ## 下一步
 
-1. Phase 4：GUI 合并动作、Finder 快捷动作、launchd watcher；
-2. Phase 5：用 50 个真实文件验证可用率，再决定是否继续投入；
-3. 后续按需评估：PPTX、PDF/DOCX 内嵌图片、Docling（复杂版面/表格）。
+1. Phase 5：用 50 个真实文件验证可用率，再决定是否继续投入；
+2. 后续按需评估：PPTX、PDF/DOCX 内嵌图片、Docling（复杂版面/表格）。
 
 ## 历史
 

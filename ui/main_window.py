@@ -1,112 +1,77 @@
 #!/usr/bin/env python3
-import sys
+# -*- coding: utf-8 -*-
+"""DocuFlow GUI：选择文件、转换并投递到 Obsidian 收件箱"""
+
 import logging
+import sys
 from pathlib import Path
+
 try:
     from PySide6.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar, 
-        QMessageBox, QSplitter, QTabWidget, QFormLayout,
-        QLineEdit, QComboBox, QLabel
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar,
+        QMessageBox, QSplitter, QTabWidget, QFormLayout, QLineEdit,
+        QComboBox, QLabel, QCheckBox,
     )
-    from PySide6.QtCore import Qt, Signal, QObject, QThread
-    from PySide6.QtGui import QDropEvent
+    from PySide6.QtCore import Qt, Signal, QObject, QThread, QUrl
+    from PySide6.QtGui import QDropEvent, QDesktopServices
 except ImportError:
     from PyQt5.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar, 
-        QMessageBox, QSplitter, QTabWidget, QFormLayout,
-        QLineEdit, QComboBox, QLabel
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar,
+        QMessageBox, QSplitter, QTabWidget, QFormLayout, QLineEdit,
+        QComboBox, QLabel, QCheckBox,
     )
-    from PyQt5.QtCore import Qt, pyqtSignal as Signal, QObject, QThread
-    from PyQt5.QtGui import QDropEvent
+    from PyQt5.QtCore import Qt, pyqtSignal as Signal, QObject, QThread, QUrl
+    from PyQt5.QtGui import QDropEvent, QDesktopServices
 
-from converter.document_converter import DocumentConverter, ConversionError
 from config import config
+from converter.kb_pipeline import default_vault_dest, detect_obsidian_vault
+from utils.file_utils import is_supported_file
 
-# 日志记录器
 logger = logging.getLogger(__name__)
+
 
 class QTextEditLogger(logging.Handler):
     def __init__(self, parent):
-        logging.Handler.__init__(self)
+        super().__init__()
         self.widget = QTextEdit(parent)
         self.widget.setReadOnly(True)
 
     def emit(self, record):
-        msg = self.format(record)
-        # 直接添加到widget，避免信号槽问题
-        self.widget.append(msg)
+        self.widget.append(self.format(record))
 
 
 class IngestWorker(QObject):
-    """知识库投递后台任务"""
+    """后台转换并投递"""
+
     finished = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, files, vault_dir, dest_subdir):
+    def __init__(self, files, vault_dir, dest_subdir, use_markitdown, ocr_mode):
         super().__init__()
         self.files = files
         self.vault_dir = vault_dir
         self.dest_subdir = dest_subdir
+        self.use_markitdown = use_markitdown
+        self.ocr_mode = ocr_mode
 
     def run(self):
         from converter.kb_pipeline import KnowledgeBasePipeline
+
         pipeline = KnowledgeBasePipeline()
         try:
             result = pipeline.ingest_to_vault(
-                self.files, self.vault_dir, dest_subdir=self.dest_subdir
+                self.files,
+                self.vault_dir,
+                dest_subdir=self.dest_subdir,
+                use_markitdown=self.use_markitdown,
+                ocr_mode=self.ocr_mode,
             )
             self.finished.emit(result)
         except Exception as e:
             self.failed.emit(str(e))
 
-class ConversionWorker(QObject):
-    conversion_finished = Signal(str)
-    conversion_error = Signal(str)
-    conversion_completed = Signal(dict)  # 新增：传递完整的转换结果
-
-    def __init__(self, files_to_convert, output_dir, output_format):
-        super().__init__()
-        self.files_to_convert = files_to_convert
-        # 空字符串转换为None，使用源文件所在目录
-        self.output_dir = output_dir if output_dir.strip() else None
-        self.output_format = output_format
-
-    def run(self):
-        converter = DocumentConverter()
-        results = {
-            'successful': [],
-            'failed': [],
-            'errors': []
-        }
-        
-        for file_path in self.files_to_convert:
-            try:
-                output_file = converter.convert_file(file_path, self.output_format, self.output_dir)
-                if output_file:
-                    results['successful'].append({
-                        'input_file': file_path,
-                        'output_file': output_file
-                    })
-                else:
-                    results['failed'].append(file_path)
-                    results['errors'].append(f"{Path(file_path).name}: 转换失败")
-            except ConversionError as e:
-                results['failed'].append(file_path)
-                results['errors'].append(f"{Path(file_path).name}: {str(e)}")
-            except Exception as e:
-                results['failed'].append(file_path)
-                results['errors'].append(f"{Path(file_path).name}: 发生意外错误: {str(e)}")
-        
-        # 只发出完整的转换结果信号，避免重复通知
-        self.conversion_completed.emit(results)
-        
-        # 仅在完全成功或完全失败时发出旧信号，但不再用于UI通知
-        if len(results['failed']) == 0:
-            self.conversion_finished.emit("所有文件转换成功！")
-        elif len(results['successful']) == 0:
-            self.conversion_error.emit("所有文件转换失败")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -116,401 +81,292 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(config.window.min_width, config.window.min_height)
         self.setAcceptDrops(True)
 
+        detected = detect_obsidian_vault() or ""
+        self.vault_dir = detected
+        self.dest_subdir = default_vault_dest(detected) if detected else "01-raw/inbox"
+
         self._init_ui()
         self._setup_logging()
 
     def _init_ui(self):
-        # 主布局
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
 
-        # 分割器
         splitter = QSplitter(Qt.Horizontal)
         main_layout.addWidget(splitter)
 
-        # 左侧面板：文件列表
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        
         self.file_list_widget = QListWidget()
         self.file_list_widget.setSelectionMode(QListWidget.ExtendedSelection)
 
-        button_layout = QHBoxLayout()
+        file_buttons = QHBoxLayout()
         self.add_files_button = QPushButton("添加文件")
         self.add_folder_button = QPushButton("添加文件夹")
         self.remove_files_button = QPushButton("移除选中")
         self.clear_files_button = QPushButton("清空列表")
-        button_layout.addWidget(self.add_files_button)
-        button_layout.addWidget(self.add_folder_button)
-        button_layout.addWidget(self.remove_files_button)
-        button_layout.addWidget(self.clear_files_button)
+        for button in (
+            self.add_files_button,
+            self.add_folder_button,
+            self.remove_files_button,
+            self.clear_files_button,
+        ):
+            file_buttons.addWidget(button)
 
-        left_layout.addWidget(QLabel("待转换文件列表："))
+        left_layout.addWidget(QLabel("待投递文件："))
         left_layout.addWidget(self.file_list_widget)
-        left_layout.addLayout(button_layout)
-        
+        left_layout.addLayout(file_buttons)
         splitter.addWidget(left_panel)
 
-        # 右侧面板：设置和日志
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
-        tab_widget = QTabWidget()
+        tabs = QTabWidget()
 
-        # 设置选项卡
         settings_tab = QWidget()
-        settings_layout = QFormLayout(settings_tab)
-        
-        # 输出目录设置
-        default_dir = config.conversion.default_output_dir
-        self.output_dir_edit = QLineEdit(str(default_dir) if default_dir else "")
-        self.output_dir_edit.setPlaceholderText("留空则使用源文件所在目录")
-        self.browse_button = QPushButton("浏览...")
-        output_dir_layout = QHBoxLayout()
-        output_dir_layout.addWidget(self.output_dir_edit)
-        output_dir_layout.addWidget(self.browse_button)
-        settings_layout.addRow("输出目录:", output_dir_layout)
+        form = QFormLayout(settings_tab)
 
-        self.output_format_combo = QComboBox()
-        for ext, fmt in config.files.supported_output_formats.items():
-            self.output_format_combo.addItem(f"{fmt.description}", ext)
-        settings_layout.addRow("输出格式:", self.output_format_combo)
+        self.vault_edit = QLineEdit(self.vault_dir)
+        self.vault_edit.setReadOnly(True)
+        self.vault_edit.setPlaceholderText("未检测到 Obsidian vault")
+        self.browse_vault_button = QPushButton("选择…")
+        vault_row = QHBoxLayout()
+        vault_row.addWidget(self.vault_edit)
+        vault_row.addWidget(self.browse_vault_button)
+        form.addRow("目标 vault：", vault_row)
 
-        self.start_conversion_button = QPushButton("开始转换")
-        self.start_conversion_button.setStyleSheet("font-size: 16px; padding: 10px;")
+        self.dest_edit = QLineEdit(self.dest_subdir)
+        self.dest_edit.setPlaceholderText("01-raw/inbox")
+        form.addRow("收件箱：", self.dest_edit)
 
-        self.ingest_button = QPushButton("📥 投递到知识库")
-        self.ingest_button.setToolTip("选择文件投递到 Obsidian 知识库收件箱（默认 01-raw/inbox），自动检测 vault")
-        self.ingest_button.setStyleSheet("font-size: 15px; padding: 8px;")
+        self.ocr_combo = QComboBox()
+        self.ocr_combo.addItem("自动（安装了 ocrmypdf 就执行）", "auto")
+        self.ocr_combo.addItem("关闭", "off")
+        form.addRow("扫描 PDF OCR：", self.ocr_combo)
 
-        right_layout.addWidget(tab_widget)
-        right_layout.addWidget(self.start_conversion_button)
+        self.markitdown_check = QCheckBox("优先使用 MarkItDown")
+        form.addRow("", self.markitdown_check)
+
+        form.addRow("", QLabel("文件会去重、原子写入；同名冲突不会覆盖。"))
+
+        self.ingest_button = QPushButton("转换并投递")
+        self.ingest_button.setStyleSheet("font-size: 16px; padding: 10px;")
+        self.open_inbox_button = QPushButton("打开收件箱")
+
+        right_layout.addWidget(tabs)
         right_layout.addWidget(self.ingest_button)
-        
-        tab_widget.addTab(settings_tab, "转换设置")
+        right_layout.addWidget(self.open_inbox_button)
 
-        # 日志选项卡
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        right_layout.addWidget(self.progress_bar)
+
+        tabs.addTab(settings_tab, "投递设置")
+
         log_tab = QWidget()
         log_layout = QVBoxLayout(log_tab)
         self.log_widget_handler = QTextEditLogger(self)
         log_layout.addWidget(self.log_widget_handler.widget)
-        tab_widget.addTab(log_tab, "运行日志")
+        tabs.addTab(log_tab, "运行日志")
 
         splitter.addWidget(right_panel)
         splitter.setSizes([self.width() // 2, self.width() // 2])
 
-        # 连接信号和槽
         self.add_files_button.clicked.connect(self.add_files)
         self.add_folder_button.clicked.connect(self.add_folder)
         self.remove_files_button.clicked.connect(self.remove_files)
         self.clear_files_button.clicked.connect(self.clear_files)
-        self.browse_button.clicked.connect(self.browse_output_dir)
-        self.start_conversion_button.clicked.connect(self.start_conversion)
-        self.ingest_button.clicked.connect(self.ingest_to_kb)
+        self.browse_vault_button.clicked.connect(self.browse_vault)
+        self.ingest_button.clicked.connect(self.start_ingest)
+        self.open_inbox_button.clicked.connect(self.open_inbox)
+
+        if not self.vault_dir:
+            self.ingest_button.setEnabled(False)
 
     def _setup_logging(self):
-        # 清除现有的处理器，避免重复
         root_logger = logging.getLogger()
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
-        
+
         config.setup_logging()
 
-        # 添加GUI日志处理器
         log_formatter = logging.Formatter(config.logging.format)
         self.log_widget_handler.setFormatter(log_formatter)
         root_logger.addHandler(self.log_widget_handler)
-        
-        # 设置第三方库日志级别
-        logging.getLogger('PIL').setLevel(logging.WARNING)
-        logging.getLogger('pdfplumber').setLevel(logging.WARNING)
-        
-        logger.info(f"{config.app.name} v{config.app.version} 已启动")
+
+        logging.getLogger("PIL").setLevel(logging.WARNING)
+        logging.getLogger("pdfplumber").setLevel(logging.WARNING)
+        logger.info("%s v%s 已启动", config.app.name, config.app.version)
+
+    def _add_paths(self, paths):
+        existing = {
+            self.file_list_widget.item(i).text()
+            for i in range(self.file_list_widget.count())
+        }
+        for path in paths:
+            path = str(path)
+            if path in existing or not is_supported_file(path):
+                continue
+            self.file_list_widget.addItem(path)
+            existing.add(path)
 
     def add_files(self):
-        """添加单个或多个文件"""
         files, _ = QFileDialog.getOpenFileNames(
-            self, "选择文件", "",
-            "All Files (*)"
+            self,
+            "选择文件",
+            "",
+            "文档 (*.pdf *.docx *.xlsx *.md *.markdown *.html *.htm *.txt)",
         )
-        for file_path in files:
-            if file_path and file_path not in [self.file_list_widget.item(i).text() 
-                                             for i in range(self.file_list_widget.count())]:
-                self.file_list_widget.addItem(file_path)
+        self._add_paths(files)
 
     def add_folder(self):
-        """添加文件夹中的所有文件"""
         folder = QFileDialog.getExistingDirectory(self, "选择文件夹")
-        if folder:
-            from pathlib import Path
-            folder_path = Path(folder)
-            files_added = 0
-            for file_path in folder_path.rglob('*'):
-                if file_path.is_file():
-                    file_str = str(file_path)
-                    if file_str not in [self.file_list_widget.item(i).text() 
-                                      for i in range(self.file_list_widget.count())]:
-                        self.file_list_widget.addItem(file_str)
-                        files_added += 1
-            
-            if files_added > 0:
-                QMessageBox.information(self, "成功", f"已添加 {files_added} 个文件")
+        if not folder:
+            return
+        files = [
+            str(path)
+            for path in Path(folder).rglob("*")
+            if path.is_file() and is_supported_file(str(path))
+        ]
+        self._add_paths(files)
+        if files:
+            QMessageBox.information(self, "完成", f"已添加 {len(files)} 个文件")
 
     def remove_files(self):
-        """移除选中的文件"""
         for item in self.file_list_widget.selectedItems():
             self.file_list_widget.takeItem(self.file_list_widget.row(item))
 
     def clear_files(self):
-        """清空文件列表"""
         self.file_list_widget.clear()
 
-    def browse_output_dir(self):
-        """浏览输出目录"""
-        directory = QFileDialog.getExistingDirectory(self, "选择输出目录")
-        if directory:
-            self.output_dir_edit.setText(directory)
-
-    def ingest_to_kb(self):
-        """一键投递素材到 Obsidian 知识库收件箱"""
-        from converter.kb_pipeline import default_vault_dest, detect_obsidian_vault
-        vault_dir = detect_obsidian_vault()
-        if not vault_dir:
-            QMessageBox.warning(self, "提示", "未检测到 Obsidian vault")
+    def browse_vault(self):
+        start = self.vault_dir or str(Path.home() / "Documents")
+        folder = QFileDialog.getExistingDirectory(self, "选择 Obsidian vault", start)
+        if not folder:
             return
-        dest = default_vault_dest(vault_dir)
+        self.vault_dir = folder
+        self.vault_edit.setText(folder)
+        self.dest_edit.setText(default_vault_dest(folder))
+        self.ingest_button.setEnabled(True)
 
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "选择要投递的文件", "", "文档 (*.pdf *.docx *.xlsx *.md *.html *.txt)"
-        )
-        if not files:
+    def start_ingest(self):
+        if self.file_list_widget.count() == 0:
+            QMessageBox.warning(self, "提示", "请先添加要投递的文件")
             return
 
+        vault = self.vault_edit.text().strip()
+        if not vault or not Path(vault).is_dir():
+            QMessageBox.warning(self, "提示", "请选择有效的 Obsidian vault")
+            return
+
+        dest = self.dest_edit.text().strip()
+        if not dest:
+            QMessageBox.warning(self, "提示", "请填写收件箱目录")
+            return
+        dest_path = Path(dest)
+        if dest_path.is_absolute() or ".." in dest_path.parts:
+            QMessageBox.warning(self, "提示", "收件箱必须是 vault 内的相对路径")
+            return
+
+        files = [
+            self.file_list_widget.item(i).text()
+            for i in range(self.file_list_widget.count())
+        ]
+        self.vault_dir = vault
+        self.dest_subdir = dest
         self.ingest_button.setEnabled(False)
         self.ingest_button.setText("投递中...")
+        self.open_inbox_button.setEnabled(False)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(True)
 
         self.ingest_thread = QThread(self)
-        self.ingest_worker = IngestWorker(files, vault_dir, dest)
+        self.ingest_worker = IngestWorker(
+            files,
+            vault,
+            dest,
+            self.markitdown_check.isChecked(),
+            self.ocr_combo.currentData(),
+        )
         self.ingest_worker.moveToThread(self.ingest_thread)
         self.ingest_thread.started.connect(self.ingest_worker.run)
         self.ingest_worker.finished.connect(self.ingest_done)
         self.ingest_worker.failed.connect(self.ingest_failed)
         self.ingest_worker.finished.connect(self.ingest_thread.quit)
         self.ingest_worker.failed.connect(self.ingest_thread.quit)
-        self.ingest_thread.finished.connect(self.ingest_reset_button)
+        self.ingest_thread.finished.connect(self.ingest_finished)
+        self.ingest_thread.finished.connect(self.ingest_thread.deleteLater)
         self.ingest_thread.start()
 
     def ingest_done(self, result):
-        output_dir = result.get("output_dir", "")
-        total = result.get("total_files", 0)
         converted = len(result.get("converted", []))
         skipped = len(result.get("skipped", []))
         failed = result.get("failed", [])
-        msg = f"投递完成：{converted}/{total} 个文件 → {output_dir}"
-        if skipped:
-            msg += f"\n跳过重复文件：{skipped} 个"
+        total = result.get("total_files", 0)
+        output_dir = result.get("output_dir", "")
+
+        message = (
+            f"转换并投递完成：\n"
+            f"成功 {converted}，跳过 {skipped}，失败 {len(failed)}，共 {total}\n"
+            f"目标：{output_dir}"
+        )
         if failed:
-            msg += f"\n\n⚠️ {len(failed)} 个失败："
-            for f in failed[:5]:
-                msg += f"\n• {Path(f['file']).name}: {f['error'][:60]}"
-        QMessageBox.information(self, "投递完成", msg)
-        logger.info(f"知识库投递: {converted}/{total} → {output_dir}")
+            message += "\n\n失败文件："
+            for item in failed[:5]:
+                message += f"\n• {Path(item['file']).name}: {item['error'][:80]}"
+            QMessageBox.warning(self, "部分完成", message)
+        else:
+            QMessageBox.information(self, "完成", message)
+        logger.info(
+            "投递完成：成功 %s，跳过 %s，失败 %s，共 %s",
+            converted, skipped, len(failed), total,
+        )
 
     def ingest_failed(self, error):
         QMessageBox.critical(self, "投递失败", f"投递过程中发生错误：\n{error}")
-        logger.error(f"知识库投递失败: {error}")
+        logger.error("投递失败: %s", error)
 
-    def ingest_reset_button(self):
+    def ingest_finished(self):
         self.ingest_button.setEnabled(True)
-        self.ingest_button.setText("📥 投递到知识库")
+        self.ingest_button.setText("转换并投递")
+        self.open_inbox_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
 
-    def start_conversion(self):
-        """开始转换"""
-        if self.file_list_widget.count() == 0:
-            QMessageBox.warning(self, "警告", "请先添加需要转换的文件！")
+    def open_inbox(self):
+        vault = self.vault_edit.text().strip()
+        dest = self.dest_edit.text().strip()
+        if not vault or not dest:
             return
-
-        # 收集所有文件
-        files_to_convert = []
-        for i in range(self.file_list_widget.count()):
-            files_to_convert.append(self.file_list_widget.item(i).text())
-
-        output_dir = self.output_dir_edit.text()
-        output_format = self.output_format_combo.currentData()
-
-        # 禁用转换按钮
-        self.start_conversion_button.setEnabled(False)
-        self.start_conversion_button.setText("转换中...")
-
-        # 创建转换线程
-        self.worker = ConversionWorker(files_to_convert, output_dir, output_format)
-        self.thread = QThread()
-        self.worker.moveToThread(self.thread)
-
-        # 连接信号
-        self.worker.conversion_error.connect(self.on_conversion_error)
-        self.worker.conversion_completed.connect(self.on_conversion_completed)
-        # 注意：conversion_finished信号已废弃，只使用conversion_completed信号
-
-        self.thread.started.connect(self.worker.run)
-        self.thread.finished.connect(self.thread.deleteLater)
-
-        self.thread.start()
-
-    def on_conversion_completed(self, results):
-        """转换完成处理"""
-        self.thread.quit()
-        self.thread.wait()
-        
-        successful_count = len(results['successful'])
-        failed_count = len(results['failed'])
-        
-        # 启用转换按钮
-        self.start_conversion_button.setEnabled(True)
-        self.start_conversion_button.setText("开始转换")
-        
-        if failed_count == 0:
-            QMessageBox.information(self, "成功", f"所有 {successful_count} 个文件转换成功！")
-        elif successful_count == 0:
-            QMessageBox.critical(self, "失败", f"所有 {failed_count} 个文件转换失败")
-        else:
-            QMessageBox.warning(self, "部分成功", 
-                              f"成功转换 {successful_count} 个文件，\n"
-                              f"失败 {failed_count} 个文件")
-            # 有失败时显示详细分析
-            self._show_conversion_analysis(
-                results, successful_count, failed_count, len(results['successful']) + failed_count
-            )
-        
-        # 显示详细错误信息
-        if results['errors']:
-            logger.error("转换错误详情：")
-            for error in results['errors']:
-                logger.error(error)
-
-    def _show_conversion_analysis(self, results, successful_count, failed_count, total_count):
-        """显示转换结果分析"""
-        # 构建详细的分析消息
-        analysis_message = f"""转换完成！
-
-📊 转换统计：
-✅ 成功：{successful_count} 个文件
-❌ 失败：{failed_count} 个文件
-📁 总计：{total_count} 个文件
-
-❌ 失败文件列表："""
-        
-        # 添加失败文件列表
-        for failed_file in results['failed']:
-            file_name = Path(failed_file).name
-            analysis_message += f"\n• {file_name}"
-        
-        # 错误分析和建议
-        analysis_message += "\n\n🔍 错误分析："
-        error_categories = self._analyze_conversion_errors(results['errors'])
-        
-        for category, info in error_categories.items():
-            if info['count'] > 0:
-                analysis_message += f"\n\n{info['icon']} {category} ({info['count']} 个)："
-                analysis_message += f"\n   {info['suggestion']}"
-        
-        # 显示分析结果
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("转换结果分析")
-        msg_box.setText(analysis_message)
-        msg_box.setIcon(QMessageBox.Warning)
-        msg_box.exec()
-        
-        logger.info(f"转换完成：成功 {successful_count} 个，失败 {failed_count} 个")
-
-    def _analyze_conversion_errors(self, errors):
-        """分析转换错误并提供建议"""
-        categories = {
-            "文件损坏": {
-                "count": 0,
-                "icon": "🔧",
-                "suggestion": "请检查文件是否能正常打开，尝试用原软件修复后重新转换"
-            },
-            "权限问题": {
-                "count": 0,
-                "icon": "🔐",
-                "suggestion": "请检查文件是否被其他程序占用，或者您是否有足够的访问权限"
-            },
-            "格式不支持": {
-                "count": 0,
-                "icon": "📄",
-                "suggestion": "请确认文件格式是否受支持，或尝试转换为其他格式"
-            },
-            "编码问题": {
-                "count": 0,
-                "icon": "🔤",
-                "suggestion": "文件可能包含特殊字符，请尝试使用UTF-8编码保存后重新转换"
-            },
-            "其他错误": {
-                "count": 0,
-                "icon": "❓",
-                "suggestion": "请检查文件完整性，或联系技术支持获取帮助"
-            }
-        }
-        
-        for error in errors:
-            error_lower = error.lower()
-            if any(keyword in error_lower for keyword in ["损坏", "corrupt", "invalid"]):
-                categories["文件损坏"]["count"] += 1
-            elif any(keyword in error_lower for keyword in ["权限", "permission", "access", "占用"]):
-                categories["权限问题"]["count"] += 1
-            elif any(keyword in error_lower for keyword in ["格式", "format", "不支持", "unsupported"]):
-                categories["格式不支持"]["count"] += 1
-            elif any(keyword in error_lower for keyword in ["编码", "encoding", "字符", "character"]):
-                categories["编码问题"]["count"] += 1
-            else:
-                categories["其他错误"]["count"] += 1
-        
-        return categories
-
-    def on_conversion_finished(self, message):
-        """转换成功 - 已废弃，避免重复通知"""
-        # 这个方法已被废弃，通知由on_conversion_completed统一处理
-        pass
-
-    def on_conversion_error(self, message):
-        """转换失败"""
-        self.thread.quit()
-        self.thread.wait()
-        
-        # 启用转换按钮
-        self.start_conversion_button.setEnabled(True)
-        self.start_conversion_button.setText("开始转换")
-        
-        QMessageBox.critical(self, "错误", message)
+        path = Path(vault) / dest
+        if not path.exists():
+            QMessageBox.information(self, "提示", "收件箱还不存在，先投递一次文件")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def dragEnterEvent(self, event):
-        """拖拽进入事件"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dropEvent(self, event):
-        """拖拽放下事件"""
-        files = []
+        paths = []
         for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            if Path(file_path).is_file():
-                files.append(file_path)
-            elif Path(file_path).is_dir():
-                # 如果是文件夹，添加所有文件
-                from pathlib import Path as pathlib_Path
-                folder_path = pathlib_Path(file_path)
-                for file_path in folder_path.rglob('*'):
-                    if file_path.is_file():
-                        files.append(str(file_path))
-        
-        # 添加文件到列表
-        for file_path in files:
-            if file_path not in [self.file_list_widget.item(i).text() 
-                               for i in range(self.file_list_widget.count())]:
-                self.file_list_widget.addItem(file_path)
+            local = url.toLocalFile()
+            if not local:
+                continue
+            path = Path(local)
+            if path.is_file() and is_supported_file(str(path)):
+                paths.append(str(path))
+            elif path.is_dir():
+                paths.extend(
+                    str(p) for p in path.rglob("*")
+                    if p.is_file() and is_supported_file(str(p))
+                )
+        self._add_paths(paths)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -158,6 +158,9 @@ class KnowledgeBasePipeline:
             raise FileNotFoundError(f"vault 路径不存在: {vault}")
 
         dest_subdir = dest_subdir or default_vault_dest(str(vault))
+        dest_path = Path(dest_subdir)
+        if dest_path.is_absolute() or ".." in dest_path.parts:
+            raise ValueError("收件箱必须是 vault 内的相对路径")
         target = vault / dest_subdir
         if not dry_run:
             target.mkdir(parents=True, exist_ok=True)

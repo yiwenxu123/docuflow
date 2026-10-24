@@ -96,6 +96,13 @@ class TestIngestToVault:
         assert (out_dir / "a.md").exists()
         assert (out_dir / "b_pdf.md").exists()
 
+    def test_rejects_absolute_dest(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        with pytest.raises(ValueError):
+            pipeline.ingest_to_vault(
+                str(sample_md), str(vault), dest_subdir="/tmp/outside"
+            )
+
     def test_ingest_accepts_file_list(self, converter, sample_md, vault):
         pipeline = KnowledgeBasePipeline(converter=converter)
         result = pipeline.ingest_to_vault([str(sample_md)], str(vault))

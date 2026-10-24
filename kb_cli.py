@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from converter.kb_pipeline import (
@@ -179,12 +180,139 @@ def cmd_doctor(args) -> int:
     return 0 if ok else 2
 
 
+def _move_unique(src: Path, folder: Path) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / src.name
+    if target.exists():
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = folder / f"{src.stem}-{stamp}{src.suffix}"
+        counter = 2
+        while target.exists():
+            target = folder / f"{src.stem}-{stamp}-{counter}{src.suffix}"
+            counter += 1
+    shutil.move(str(src), str(target))
+    return target
+
+
+def _watch_candidates(box: Path) -> list:
+    return sorted(
+        p for p in box.iterdir()
+        if (p.is_file() or p.is_dir()) and not p.name.startswith(".")
+    )
+
+
+def _path_signature(path: Path):
+    """文件看 size/mtime；文件夹看内部所有文件，避免写入中途被处理"""
+    try:
+        if path.is_file():
+            stat = path.stat()
+            return ("file", stat.st_size, stat.st_mtime_ns)
+        if path.is_dir():
+            items = []
+            for child in sorted(path.rglob("*")):
+                if child.is_file():
+                    stat = child.stat()
+                    items.append((
+                        str(child.relative_to(path)),
+                        stat.st_size,
+                        stat.st_mtime_ns,
+                    ))
+            return ("dir", tuple(items))
+    except OSError:
+        return None
+    return None
+
+
+def cmd_watch(args) -> int:
+    vault_dir = args.vault or detect_obsidian_vault()
+    if not vault_dir:
+        print("未检测到 Obsidian vault，请用 --vault 指定路径", file=sys.stderr)
+        return 2
+    vault_dir = os.path.expanduser(vault_dir)
+    if not os.path.isdir(vault_dir):
+        print(f"目标路径不存在: {vault_dir}", file=sys.stderr)
+        return 2
+
+    box = Path(os.path.expanduser(args.box))
+    box.mkdir(parents=True, exist_ok=True)
+    dest = args.dest or default_vault_dest(vault_dir)
+    processed_dir = box / "_processed"
+    failed_dir = box / "_failed"
+    unsupported_dir = box / "_unsupported"
+
+    pipeline = KnowledgeBasePipeline()
+    last_seen = {}
+    failures = 0
+    print(f"监听: {box} -> {vault_dir}/{dest}（间隔 {args.interval}s）")
+
+    try:
+        while True:
+            files = _watch_candidates(box)
+            if args.once:
+                ready = files
+            else:
+                ready = []
+                for path in files:
+                    signature = _path_signature(path)
+                    if signature is None:
+                        continue
+                    if last_seen.get(path) == signature:
+                        ready.append(path)
+                    else:
+                        last_seen[path] = signature
+                last_seen = {p: sig for p, sig in last_seen.items() if p.exists()}
+
+            for path in ready:
+                try:
+                    result = pipeline.ingest_to_vault(
+                        [str(path)],
+                        vault_dir,
+                        dest_subdir=dest,
+                        use_markitdown=args.markitdown,
+                        ocr_mode=args.ocr,
+                    )
+                except Exception as e:
+                    result = {
+                        "converted": [],
+                        "skipped": [],
+                        "failed": [{"file": str(path), "error": str(e)}],
+                        "total_files": 1,
+                    }
+
+                stamp = time.strftime("%H:%M:%S")
+                if result["failed"]:
+                    failures += 1
+                    print(f"[{stamp}] 失败 {path.name}: {result['failed'][0]['error']}")
+                    if not args.keep_originals:
+                        _move_unique(path, failed_dir)
+                elif result["total_files"] == 0:
+                    print(f"[{stamp}] 不支持 {path.name}")
+                    if not args.keep_originals:
+                        _move_unique(path, unsupported_dir)
+                else:
+                    print(
+                        f"[{stamp}] 已处理 {path.name}: "
+                        f"{len(result['converted'])} 转换, "
+                        f"{len(result['skipped'])} 跳过"
+                    )
+                    if not args.keep_originals:
+                        _move_unique(path, processed_dir)
+                last_seen.pop(path, None)
+
+            if args.once:
+                return 1 if failures else 0
+            time.sleep(max(1, args.interval))
+    except KeyboardInterrupt:
+        print("\n已停止监听")
+        return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="DocuFlow 知识库投递")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ingest = sub.add_parser("ingest", help="转换并投递到 Obsidian vault")
-    p_ingest.add_argument("source", help="源文件或目录")
+    p_ingest.add_argument("source", nargs="+", help="源文件或目录（可多个）")
     p_ingest.add_argument("--vault", help="Obsidian vault 路径（缺省自动检测）")
     p_ingest.add_argument("--dest", help="vault 内目标子目录（缺省 01-raw/inbox）")
     p_ingest.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown")
@@ -210,6 +338,19 @@ def main() -> int:
     p_doctor.add_argument("--dest", help="vault 内目标子目录")
     p_doctor.add_argument("--json", action="store_true", help="输出 JSON")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_watch = sub.add_parser("watch", help="监听投递箱并自动投递")
+    p_watch.add_argument("--box", default="~/Documents/素材投递箱", help="投递箱目录")
+    p_watch.add_argument("--vault", help="Obsidian vault 路径（缺省自动检测）")
+    p_watch.add_argument("--dest", help="vault 内目标子目录")
+    p_watch.add_argument("--interval", type=int, default=30, help="扫描间隔秒数")
+    p_watch.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown")
+    p_watch.add_argument(
+        "--ocr", choices=["auto", "off"], default="auto", help="扫描 PDF 的 OCR 策略"
+    )
+    p_watch.add_argument("--keep-originals", action="store_true", help="保留投递箱中的原文件")
+    p_watch.add_argument("--once", action="store_true", help="只处理一轮后退出（调试/测试）")
+    p_watch.set_defaults(func=cmd_watch)
 
     args = parser.parse_args()
     return args.func(args)

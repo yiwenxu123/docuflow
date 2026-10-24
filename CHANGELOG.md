@@ -2,7 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [Unreleased] - Phase 3 content quality
+## [Unreleased] - Phase 4 desktop integration
+
+### 新增
+- GUI 合并为单一动作“转换并投递”：目标 vault、收件箱、OCR 策略、MarkItDown 选项、打开收件箱
+- `ingest` 支持一次传入多个文件或目录，供 Finder 多选使用
+- `watch` 命令：轮询投递箱，支持文件/文件夹、稳定性检查、成功归档 `_processed`、失败归档 `_failed`、不支持归档 `_unsupported`
+- `watch --once` 与 `--keep-originals`，便于调试和保留原文件
+- launchd 安装/卸载脚本：`scripts/install_watch_service.sh`、`scripts/uninstall_watch_service.sh`，支持 `--dry-run`
+- Finder Quick Action 模板与安装脚本：右键“用 DocuFlow 投递到知识库”
+- Finder 包装脚本写入 `~/Library/Logs/DocuFlow-finder.log`，并通过系统通知反馈结果
+- 收件箱路径校验：必须是 vault 内的相对路径，拒绝绝对路径和 `..`
+
+### 变更
+- GUI 移除独立“开始转换”按钮和输出格式设置；仅转换保留在 CLI
+- 测试增加到 96 个，全部通过
+
+### 已知限制
+- Finder Quick Action 安装后可能需要在系统设置中手动启用，或重启 Finder
+- launchd 安装脚本已验证 dry-run，未在本机实际加载常驻服务
+- OCR 执行路径仍未实测（未安装 ocrmypdf）
+- watch 只处理投递箱顶层文件和文件夹，不递归监听新增子目录
+
+## [2.0.0-phase3] - 2026-10-24
 
 ### 新增
 - HTML 正文抽取：用 trafilatura 提取文章主体并输出 Markdown，失败时回退 pandoc
