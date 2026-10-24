@@ -51,6 +51,7 @@ def cmd_ingest(args) -> int:
             use_markitdown=args.markitdown,
             dry_run=args.dry_run,
             allow_duplicate=args.allow_duplicate,
+            ocr_mode=args.ocr,
         )
     except Exception as e:
         print(f"投递失败: {e}", file=sys.stderr)
@@ -189,6 +190,12 @@ def main() -> int:
     p_ingest.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown")
     p_ingest.add_argument("--dry-run", action="store_true", help="只预演，不写文件、不写状态")
     p_ingest.add_argument("--allow-duplicate", action="store_true", help="跳过哈希去重（仍不覆盖）")
+    p_ingest.add_argument(
+        "--ocr",
+        choices=["auto", "off"],
+        default="auto",
+        help="扫描 PDF 的 OCR 策略（默认 auto：安装了 ocrmypdf 就自动执行）",
+    )
     p_ingest.add_argument("--json", action="store_true", help="输出 JSON 报告")
     p_ingest.set_defaults(func=cmd_ingest)
 

@@ -31,6 +31,7 @@ class PandocProcessorMixin:
         """
         try:
             self.logger.debug(f"使用MarkItDown转换文件: {input_path} -> {output_path}")
+            self.last_engine = "markitdown"
 
             # 调用MarkItDown进行转换
             result_path = self.markitdown_integration.convert_file(
@@ -101,31 +102,40 @@ class PandocProcessorMixin:
         """
         # PDF转换使用专门的处理方法
         if input_format.lower() == ".pdf" and output_format.lower() == ".md":
+            self.last_engine = "pdfplumber"
             return self._convert_pdf_to_markdown(input_path, output_path)
 
         # PDF转HTML使用专门的处理方法
         if input_format.lower() == ".pdf" and output_format.lower() in [".html", ".htm"]:
+            self.last_engine = "pdfplumber"
             return self._convert_pdf_to_html(input_path, output_path)
 
         # PDF转TXT使用专门的处理方法
         if input_format.lower() == ".pdf" and output_format.lower() == ".txt":
+            self.last_engine = "pdfplumber"
             return self._convert_pdf_to_txt(input_path, output_path)
 
         # Excel转Markdown使用专门的处理方法
         if input_format.lower() in [".xlsx", ".xls"] and output_format.lower() == ".md":
+            self.last_engine = "openpyxl"
             return self._convert_excel_to_markdown(input_path, output_path)
 
         # Excel转TXT使用专门的处理方法
         if input_format.lower() in [".xlsx", ".xls"] and output_format.lower() == ".txt":
+            self.last_engine = "openpyxl"
             return self._convert_excel_to_txt(input_path, output_path)
 
         # Excel转HTML使用专门的处理方法
         if input_format.lower() in [".xlsx", ".xls"] and output_format.lower() in [".html", ".htm"]:
+            self.last_engine = "openpyxl"
             return self._convert_excel_to_html(input_path, output_path)
 
-        # HTML转Markdown使用专门的处理方法（清理HTML标记）
+        # HTML转Markdown使用专门的处理方法（正文抽取）
         if input_format.lower() in [".html", ".htm"] and output_format.lower() == ".md":
+            self.last_engine = "pandoc"
             return self._convert_html_to_clean_markdown(input_path, output_path)
+
+        self.last_engine = "pandoc"
 
         # 准备pandoc命令
         cmd = ["pandoc", input_path, "-o", output_path]

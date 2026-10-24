@@ -165,6 +165,41 @@ class TestIngestContract:
         assert "Share" in text
         assert "![图](img.png)" in text
 
+    def test_html_uses_body_extraction(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "article.html"
+        doc.write_text(
+            "<html><body><article><h1>标题</h1>"
+            "<p>Code 与 Share 都是正常词。</p></article></body></html>",
+            encoding="utf-8",
+        )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        text = Path(result["converted"][0]).read_text(encoding="utf-8")
+
+        assert 'engine: "trafilatura"' in text
+        assert "Code" in text
+        assert "Share" in text
+
+    def test_local_image_materialized(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "note.md"
+        doc.write_text("# 图\n\n![图](pic.png)", encoding="utf-8")
+        (src / "pic.png").write_bytes(b"fake-png-data")
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        output = Path(result["converted"][0])
+        text = output.read_text(encoding="utf-8")
+
+        assert "attachments/" in text
+        assert "attachments: 1" in text
+        attachments = list((vault / "01-raw" / "inbox" / "attachments").rglob("*.png"))
+        assert len(attachments) == 1
+
     def test_existing_frontmatter_preserved(self, converter, vault, tmp_path):
         src = tmp_path / "src"
         src.mkdir()

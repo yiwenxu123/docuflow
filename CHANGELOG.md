@@ -2,7 +2,32 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [Unreleased] - Phase 2 ingest contract
+## [Unreleased] - Phase 3 content quality
+
+### 新增
+- HTML 正文抽取：用 trafilatura 提取文章主体并输出 Markdown，失败时回退 pandoc
+- 图片附件：本地图片复制到 `attachments/<文档键>/` 并重写链接；远程图片保留原 URL
+- 扫描 PDF 检测：抽样判断文字量；安装 `ocrmypdf` 时自动 OCR，否则给出明确失败提示
+- `ingest --ocr auto|off` 控制 OCR 策略
+- Frontmatter 的 `engine` 记录实际引擎：`trafilatura`、`markitdown`、`pdfplumber`、`openpyxl`、`pandoc`、`ocrmypdf+...`
+
+### 变更
+- 删除 Gist 专用的全局删词与 CSS 清洗；正常词（`Code`、`Share`、`Star`、`Fork`）不再被删除
+- Markdown 清理只做安全规范化，保留列表/代码块缩进和自动链接
+- 图片附件只允许来源目录内的本地文件，避免把任意绝对路径复制进 vault
+- 测试增加到 91 个，全部通过
+
+### 质量结论
+- 真实 PDF 对比：现有 pdfplumber 解析字数更多，但存在表格重复和页内噪声；MarkItDown 输出更干净
+- 本轮不引入 Docling：当前文本型 PDF 用 MarkItDown/现有解析足够；复杂版面或表格需求出现后再评估
+- OCR 执行路径未在本机验证（未安装 ocrmypdf）；扫描检测与失败提示已验证
+
+### 已知限制
+- PDF/DOCX 内嵌图片尚未提取；仅 Markdown/HTML 中的本地图片会落盘
+- 远程图片不会下载，只保留 URL
+- PPTX、EPUB 仍不支持
+
+## [2.0.0-phase2] - 2026-10-24
 
 ### 新增
 - SQLite 状态库：记录来源/输出/哈希/结果，默认 `~/Library/Application Support/DocuFlow/state.db`，可用 `DOCUFLOW_STATE_DB` 覆盖

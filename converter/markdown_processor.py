@@ -176,7 +176,27 @@ class MarkdownProcessorMixin:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
 
-        # 首先使用pandoc进行基本转换
+        # 优先抽取正文；失败时回退到 pandoc
+        try:
+            from converter.html_extractor import html_to_markdown
+
+            extracted = html_to_markdown(Path(html_path))
+        except Exception:
+            extracted = None
+
+        if extracted:
+            cleaned = self._clean_content(
+                content=extracted,
+                content_type="markdown",
+                filter_images=self.filter_images,
+                clean_content=self.clean_content,
+            )
+            if cleaned.strip():
+                self.last_engine = "trafilatura"
+                Path(output_path).write_text(cleaned, encoding="utf-8")
+                return str(output_path)
+
+        # 回退：pandoc 转 Markdown
         temp_md_path = str(output_path) + ".temp"
 
         # 添加UTF-8编码支持的pandoc命令
@@ -364,9 +384,6 @@ class MarkdownProcessorMixin:
         content = re.sub(r'<th[^>]*>(.*?)</th>', r'| \1 ', content, flags=re.IGNORECASE | re.DOTALL)
         content = re.sub(r'<td[^>]*>(.*?)</td>', r'| \1 ', content, flags=re.IGNORECASE | re.DOTALL)
 
-        # 去除所有剩余的HTML标签
-        content = re.sub(r'<[^>]+>', '', content)
-
         # 处理HTML实体
         content = content.replace('&quot;', '"')
         content = content.replace('&amp;', '&')
@@ -374,99 +391,13 @@ class MarkdownProcessorMixin:
         content = content.replace('&gt;', '>')
         content = content.replace('&nbsp;', ' ')
 
-        # 移除文件路径引用（如 /path/to/file.md#L1-224）
-        content = re.sub(r'/[^\s]+\.md#L\d+-\d+', '', content)
-
-        # 清理GitHub Gist页面结构，但保留评论内容
-        # 1. 去除GitHub Gist特定的页面结构标记
-        content = re.sub(r'::+\s*\{[^\}]*\}', '', content)
-
-        # 2. 去除所有的:::标记（GitHub Gist的div标记）
-        content = re.sub(r':::+', '', content)
-
-        # 3. 去除GitHub Gist特定的属性标记（保留Markdown链接和图片）
-        # 只去除{...}标记，但不影响Markdown语法
-        content = re.sub(r'(?<!\[)(?<!\!\[)\{[^}]*\}', '', content)
-
-        # 4. 去除GitHub Gist特定的组件标记（只去除特定模式）
-        # 去除 [{.class}] 模式但保留 [text](url) 和 ![alt](url) 模式
-        content = re.sub(r'\[\{[^\}]*\}\]', '', content)
-
-        # 5. 去除GitHub Gist页面结构元素（不使用单词边界，因为它们可能在链接或其他上下文中）
-        gist_elements = [
-            'gist.github.com',
-            'Created by',
-            'Star',
-            'Fork',
-            'Share',
-            'Copy link',
-            'Embed',
-            'Report abuse',
-            'Subscribe',
-            'Download ZIP',
-            'Unstar',
-            'Clone via HTTPS',
-            'Clone via SSH',
-            'Learn more about clone URLs',
-            'Save to your computer',
-            'Code',
-            'Revisions',
-            'stargazers',
-            'forks',
-            'No results found',
-            'Select an option'
-        ]
-        for element in gist_elements:
-            content = content.replace(element, '')
-
-        # 6. 去除GitHub Gist特定的HTML结构
-        content = re.sub(r'\[\{[^\}]*\}\]\([^\)]*\)\{[^\}]*\}', '', content)
-        content = re.sub(r'\{#[^\}]*\}', '', content)
-
-        # 7. 去除所有的CSS类名（但保留Markdown链接中的URL）
-        css_classes = [
-            r'\.octicon[^\s]*',
-            r'\.Button[^\s]*',
-            r'\.ActionListItem[^\s]*',
-            r'\.FormControl[^\s]*',
-            r'\.Overlay[^\s]*',
-            r'\.Counter[^\s]*',
-            r'\.UnderlineNav[^\s]*',
-            r'\.color-fg[^\s]*',
-            r'\.d-flex[^\s]*',
-            r'\.sr-only[^\s]*',
-            r'\.mr-2[^\s]*',
-            r'\.flex-shrink-0[^\s]*'
-        ]
-        for pattern in css_classes:
-            content = re.sub(pattern, '', content)
-
-        # 8. 查找评论部分的开始（通常以 [](#comments) 或类似标记开始）
-        comments_start = re.search(r'^\[\]{#comments}', content, re.MULTILINE)
-        if comments_start:
-            # 保留评论内容，只去除页面结构
-            pass
-        else:
-            # 尝试查找其他评论标记
-            comments_start = re.search(r'^\[\]{#comments\s*}', content, re.MULTILINE)
-            if comments_start:
-                # 同样保留评论内容
-                pass
-
         # 清理多余的空行（超过2个连续空行压缩为2个）
         content = re.sub(r'\n{3,}', '\n\n', content)
 
-        # 清理行首行尾的空白字符
+        # 只清理行尾空白，保留列表/代码块缩进
         lines = content.split('\n')
-        cleaned_lines = [line.strip() for line in lines]
+        cleaned_lines = [line.rstrip() for line in lines]
         content = '\n'.join(cleaned_lines)
-
-        # 移除多余的转义字符
-        content = re.sub(r'\\([^\\])', r'\1', content)
-
-        # 清理多余的标记符号
-        content = re.sub(r'\*{3,}', '**', content)  # 多个星号压缩为两个
-        content = re.sub(r'_{3,}', '__', content)   # 多个下划线压缩为两个
 
         # 移除空的标题
         content = re.sub(r'^#+\s*$', '', content, flags=re.MULTILINE)
@@ -571,9 +502,6 @@ class MarkdownProcessorMixin:
             else:
                 # 默认处理
                 cleaned_content = content
-
-            # 通用清理：移除文件路径引用
-            cleaned_content = re.sub(r'/[^\s]+\.md#L\d+-\d+', '', cleaned_content)
 
             # 最终清理
             cleaned_content = cleaned_content.strip()

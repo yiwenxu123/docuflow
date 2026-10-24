@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from config import config as app_config
+from converter.attachments import materialize_images
 from converter.document_converter import DocumentConverter
+from converter.ocr import needs_ocr, ocr_available, run_ocr
 from converter.frontmatter import (
     detect_language,
     extract_title,
@@ -135,6 +137,7 @@ class KnowledgeBasePipeline:
         use_markitdown: bool = False,
         dry_run: bool = False,
         allow_duplicate: bool = False,
+        ocr_mode: str = "auto",
     ) -> Dict[str, Any]:
         """转换并投递文件或目录
 
@@ -145,6 +148,7 @@ class KnowledgeBasePipeline:
             use_markitdown: 优先使用 MarkItDown
             dry_run: 只预演，不写文件、不写状态
             allow_duplicate: 跳过哈希去重（仍不会覆盖文件）
+            ocr_mode: auto（有 ocrmypdf 时自动 OCR）或 off（不 OCR）
 
         Returns:
             dict: converted / skipped / planned / failed / output_dir / run_id
@@ -182,7 +186,9 @@ class KnowledgeBasePipeline:
                         })
                         continue
 
-                existing_frontmatter, body = self._to_markdown(src, use_markitdown)
+                existing_frontmatter, body, engine = self._to_markdown(
+                    src, use_markitdown, ocr_mode
+                )
                 if not body.strip():
                     raise ValueError("转换结果为空")
                 content_hash = sha256_text(body)
@@ -197,15 +203,24 @@ class KnowledgeBasePipeline:
                         })
                         continue
 
+                base = self._output_base(src)
+                body, attachments_count = materialize_images(
+                    body,
+                    src,
+                    target,
+                    f"{base}-{content_hash[:6]}",
+                    dry_run=dry_run,
+                )
                 title = extract_title(body, src.stem)
-                meta = self._build_frontmatter(src, body, title, source_hash, content_hash, engine)
+                meta = self._build_frontmatter(
+                    src, body, title, source_hash, content_hash, engine, attachments_count
+                )
                 if existing_frontmatter is not None:
                     final_text = merge_frontmatter(existing_frontmatter, meta) + body
                 else:
                     final_text = render_frontmatter(meta) + body
                 final_hash = sha256_text(final_text)
 
-                base = self._output_base(src)
                 final_path, identical = self._resolve_output_path(
                     target, base, final_hash, allow_duplicate
                 )
@@ -288,22 +303,52 @@ class KnowledgeBasePipeline:
             if p.is_file() and p.suffix.lower() in SUPPORTED_SOURCE_EXTS
         )
 
-    def _to_markdown(self, src: Path, use_markitdown: bool) -> tuple:
+    def _to_markdown(
+        self, src: Path, use_markitdown: bool, ocr_mode: str = "auto"
+    ) -> tuple:
+        if ocr_mode not in {"auto", "off"}:
+            raise ValueError(f"不支持的 OCR 模式: {ocr_mode}")
+
         ext = src.suffix.lower()
+        engine = self._engine_for(src, use_markitdown)
+
+        if ext in {".md", ".markdown", ".txt"}:
+            content = src.read_text(encoding="utf-8", errors="replace")
+            existing_frontmatter, content_body = split_frontmatter(content)
+            cleaned = _normalize_text(content_body)
+            return existing_frontmatter, cleaned, engine
+
+        if ext == ".pdf" and needs_ocr(src):
+            if ocr_mode == "off":
+                raise ValueError("扫描版 PDF 需要 OCR；已用 --ocr off 禁用")
+            if not ocr_available():
+                raise ValueError(
+                    "扫描版 PDF 需要 OCR；请安装 ocrmypdf 与 tesseract 语言包，"
+                    "或用 --ocr off 跳过"
+                )
+            with tempfile.TemporaryDirectory(prefix="docuflow_ocr_") as tmp_dir:
+                ocr_pdf = Path(tmp_dir) / "ocr.pdf"
+                run_ocr(src, ocr_pdf)
+                text = self._convert_to_text(ocr_pdf, use_markitdown)
+                actual_engine = self.converter.last_engine or engine
+                existing_frontmatter, body = split_frontmatter(text)
+                return existing_frontmatter, body, f"ocrmypdf+{actual_engine}"
+
+        text = self._convert_to_text(src, use_markitdown)
+        actual_engine = self.converter.last_engine or engine
+        existing_frontmatter, body = split_frontmatter(text)
+        return existing_frontmatter, body, actual_engine
+
+    def _convert_to_text(self, src: Path, use_markitdown: bool) -> str:
         with tempfile.TemporaryDirectory(prefix="docuflow_convert_") as tmp_dir:
             tmp_md = Path(tmp_dir) / "converted.md"
-            if ext in {".md", ".markdown", ".txt"}:
-                content = src.read_text(encoding="utf-8", errors="replace")
-                existing_frontmatter, content_body = split_frontmatter(content)
-                cleaned = _normalize_text(content_body)
-                tmp_md.write_text(cleaned, encoding="utf-8")
-                return existing_frontmatter, cleaned
-
             self.converter.convert_file(
-                str(src), str(tmp_md), use_markitdown=use_markitdown
+                str(src),
+                str(tmp_md),
+                use_markitdown=use_markitdown,
+                filter_images=False,
             )
-            text = tmp_md.read_text(encoding="utf-8", errors="replace")
-            return split_frontmatter(text)
+            return tmp_md.read_text(encoding="utf-8", errors="replace")
 
     def _output_base(self, src: Path) -> str:
         ext = src.suffix.lstrip(".").lower()
@@ -354,6 +399,7 @@ class KnowledgeBasePipeline:
         source_hash: str,
         content_hash: str,
         engine: str,
+        attachments_count: int = 0,
     ) -> Dict[str, Any]:
         try:
             captured_at = datetime.fromtimestamp(
@@ -374,5 +420,5 @@ class KnowledgeBasePipeline:
             "content_hash": f"sha256:{content_hash}",
             "language": detect_language(body),
             "pages": _pdf_pages(src),
-            "attachments": 0,
+            "attachments": attachments_count,
         }

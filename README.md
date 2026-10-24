@@ -19,12 +19,15 @@ DocuFlow 现在只做一件事：
 ## 当前能力
 
 - 批量转换：PDF / DOCX / XLSX / HTML / Markdown / TXT → Markdown；
+- HTML 正文抽取：用 trafilatura 去掉导航/页脚，保留文章主体；
+- 图片附件：本地图片复制到 `attachments/<文档键>/` 并重写链接；
+- 扫描 PDF：抽样检测文字量；安装 `ocrmypdf` 时自动 OCR，否则明确报错；
 - 去重：同一来源文件跳过；不同格式但内容相同也跳过；
 - 写入安全：原子写入；同名文件追加内容哈希后缀，绝不覆盖；
-- Frontmatter：来源、时间、转换器、内容哈希、语言、页数；
+- Frontmatter：来源、时间、转换器、引擎、内容哈希、语言、页数、附件数；
 - 报告：每次运行生成 `runs/<id>.json`，支持 `--json`；
 - 状态：SQLite 记录在 `~/Library/Application Support/DocuFlow/state.db`；
-- 自检：`doctor` 检查 pandoc、MarkItDown、vault 和收件箱。
+- 自检：`doctor` 检查 pandoc、MarkItDown、OCR、vault 和收件箱。
 
 ## 安装
 
@@ -36,6 +39,14 @@ pip install -r requirements.txt
 ```
 
 MarkItDown 是可选引擎；优先使用 `PATH` 中的 `markitdown`，同时兼容旧的 `~/markitdown-env/bin/markitdown` 安装。
+
+扫描版 PDF 的 OCR 是可选项：
+
+```bash
+brew install ocrmypdf tesseract tesseract-lang
+```
+
+未安装时，扫描件会明确失败并提示，而不会静默输出空文件。
 
 ## 使用
 
@@ -58,6 +69,9 @@ MarkItDown 是可选引擎；优先使用 `PATH` 中的 `markitdown`，同时兼
 
 # 机器可读报告
 ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --json
+
+# 扫描 PDF：默认 auto（有 ocrmypdf 就 OCR）；off 表示不 OCR
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/扫描件 --ocr off
 ```
 
 投递规则：
@@ -124,8 +138,8 @@ attachments: 0
 
 - `source_hash` 用于识别同一来源文件；
 - `content_hash` 用于识别不同格式但内容相同的文件；
-- `engine` 记录实际使用的抽取引擎；
-- `attachments` 当前为 0，图片附件落盘在 Phase 3 实现。
+- `engine` 记录实际使用的抽取引擎（如 `trafilatura`、`markitdown`、`pdfplumber`、`ocrmypdf+pdfplumber`）；
+- `attachments` 是本次落盘的本地图片数量。
 
 如果源 Markdown 已有 frontmatter，DocuFlow 会完整保留原有字段（包括 `tags`、`aliases` 及其缩进），并把本次投递元数据放在 `docuflow:` 子块下，避免覆盖你的笔记属性。
 
@@ -133,14 +147,14 @@ attachments: 0
 
 | 输入 | 可用输出 | 说明 |
 |---|---|---|
-| PDF | Markdown / HTML / TXT | 仅文本型 PDF；扫描件没有 OCR |
+| PDF | Markdown / HTML / TXT | 文本型 PDF；扫描件安装 ocrmypdf 后自动 OCR |
 | DOCX | Markdown / HTML / TXT | 依赖 pandoc |
 | XLSX | Markdown / HTML / TXT | 依赖 openpyxl/pandas |
-| Markdown | HTML / TXT / DOCX | 依赖 pandoc |
-| HTML / HTM | Markdown / TXT / DOCX | 会做正文清理 |
+| Markdown | HTML / TXT / DOCX | 本地图片会落盘为附件 |
+| HTML / HTM | Markdown / TXT / DOCX | trafilatura 正文抽取；本地图片落盘 |
 | TXT | Markdown / HTML / DOCX | 依赖 pandoc |
 
-**暂不支持：** PPTX、EPUB、扫描版 PDF 的 OCR、PDF 导出、图片附件落盘。
+**暂不支持：** PPTX、EPUB、PDF 导出、PDF/DOCX 内嵌图片提取、远程图片下载。
 
 ## 目录约定
 
@@ -168,13 +182,13 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-当前测试覆盖：核心转换、CLI、错误处理、HTML 清理、MarkItDown、Obsidian 检测、frontmatter、状态库、去重、不覆盖、dry-run、20 文件二次投递。
+当前测试覆盖：核心转换、CLI、错误处理、HTML 正文抽取、MarkItDown、Obsidian 检测、frontmatter、状态库、去重、不覆盖、dry-run、图片附件、OCR 检测、20 文件二次投递。
 
 ## 下一步
 
-1. Phase 3：MarkItDown 标准安装；HTML 正文抽取；图片附件；扫描件检测 + OCR；PPTX 支持；
-2. Phase 4：GUI 合并动作、Finder 快捷动作、launchd watcher；
-3. Phase 5：用 50 个真实文件验证可用率，再决定是否继续投入。
+1. Phase 4：GUI 合并动作、Finder 快捷动作、launchd watcher；
+2. Phase 5：用 50 个真实文件验证可用率，再决定是否继续投入；
+3. 后续按需评估：PPTX、PDF/DOCX 内嵌图片、Docling（复杂版面/表格）。
 
 ## 历史
 

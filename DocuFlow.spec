@@ -20,6 +20,8 @@ a = Analysis(
         'pandas',
         'pandas._libs.tslibs.timedeltas',
         'numpy',
+        'trafilatura',
+        'lxml',
     ],
     hookspath=[],
     runtime_hooks=[],

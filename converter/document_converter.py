@@ -50,6 +50,7 @@ class DocumentConverter(
         self.clean_content = True
         self.markitdown_integration = get_markitdown_integration()
         self.use_markitdown = False
+        self.last_engine = ""
 
     def _check_dependencies(self) -> None:
         """检查 pandoc 是否可用"""
