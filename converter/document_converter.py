@@ -141,7 +141,9 @@ class DocumentConverter(
                 output_dir = str(output_path.parent)
             else:
                 actual_output_format = (
-                    output_format if output_format.startswith(".") else "." + output_format
+                    output_format
+                    if output_format.startswith(".")
+                    else "." + output_format
                 )
                 output_path = None
 
@@ -185,7 +187,9 @@ class DocumentConverter(
                 and self.markitdown_integration.is_available()
                 and actual_output_format == ".md"
             ):
-                return self._convert_with_markitdown(str(file_path_obj), str(output_path))
+                return self._convert_with_markitdown(
+                    str(file_path_obj), str(output_path)
+                )
 
             return self._convert_with_pandoc(
                 str(file_path_obj), str(output_path), file_ext, actual_output_format
@@ -234,6 +238,8 @@ class DocumentConverter(
                 error_code="UNSUPPORTED_OUTPUT_FORMAT",
                 details={
                     "output_format": output_format,
-                    "supported_formats": sorted(self.config.files.all_output_extensions),
+                    "supported_formats": sorted(
+                        self.config.files.all_output_extensions
+                    ),
                 },
             )

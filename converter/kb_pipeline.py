@@ -35,15 +35,23 @@ from converter.frontmatter import (
 from converter.state import StateStore, now_iso, sha256_file, sha256_text
 
 SUPPORTED_SOURCE_EXTS = {
-    ".md", ".markdown", ".txt", ".html", ".htm",
-    ".pdf", ".docx", ".xlsx",
+    ".md",
+    ".markdown",
+    ".txt",
+    ".html",
+    ".htm",
+    ".pdf",
+    ".docx",
+    ".xlsx",
 }
 MIN_HTML_CONTENT_CHARS = 40
 
 
 def detect_obsidian_vault() -> Optional[str]:
     """检测当前打开的 Obsidian vault 路径"""
-    obsidian_json = Path.home() / "Library" / "Application Support" / "obsidian" / "obsidian.json"
+    obsidian_json = (
+        Path.home() / "Library" / "Application Support" / "obsidian" / "obsidian.json"
+    )
     if not obsidian_json.exists():
         return None
     try:
@@ -185,11 +193,13 @@ class KnowledgeBasePipeline:
                 if not allow_duplicate:
                     existing = self.state.find_success_by_source(source_hash)
                     if existing and Path(existing["output_path"]).exists():
-                        skipped.append({
-                            "file": str(src),
-                            "output": existing["output_path"],
-                            "reason": "source hash already ingested",
-                        })
+                        skipped.append(
+                            {
+                                "file": str(src),
+                                "output": existing["output_path"],
+                                "reason": "source hash already ingested",
+                            }
+                        )
                         continue
 
                 existing_frontmatter, body, engine = self._to_markdown(
@@ -212,11 +222,13 @@ class KnowledgeBasePipeline:
                 if not allow_duplicate:
                     existing = self.state.find_success_by_content(content_hash)
                     if existing and Path(existing["output_path"]).exists():
-                        skipped.append({
-                            "file": str(src),
-                            "output": existing["output_path"],
-                            "reason": "content hash already ingested",
-                        })
+                        skipped.append(
+                            {
+                                "file": str(src),
+                                "output": existing["output_path"],
+                                "reason": "content hash already ingested",
+                            }
+                        )
                         continue
 
                 base = self._output_base(src)
@@ -229,7 +241,13 @@ class KnowledgeBasePipeline:
                 )
                 title = extract_title(body, src.stem)
                 meta = self._build_frontmatter(
-                    src, body, title, source_hash, content_hash, engine, attachments_count
+                    src,
+                    body,
+                    title,
+                    source_hash,
+                    content_hash,
+                    engine,
+                    attachments_count,
                 )
                 if existing_frontmatter is not None:
                     final_text = merge_frontmatter(existing_frontmatter, meta) + body
@@ -244,15 +262,21 @@ class KnowledgeBasePipeline:
                 if identical:
                     if not dry_run:
                         self.state.record_success(
-                            source_hash, content_hash, str(src.resolve()),
-                            str(final_path), title,
-                            f"docuflow {app_config.app.version}", engine,
+                            source_hash,
+                            content_hash,
+                            str(src.resolve()),
+                            str(final_path),
+                            title,
+                            f"docuflow {app_config.app.version}",
+                            engine,
                         )
-                    skipped.append({
-                        "file": str(src),
-                        "output": str(final_path),
-                        "reason": "identical file already exists",
-                    })
+                    skipped.append(
+                        {
+                            "file": str(src),
+                            "output": str(final_path),
+                            "reason": "identical file already exists",
+                        }
+                    )
                     continue
 
                 if dry_run:
@@ -261,9 +285,13 @@ class KnowledgeBasePipeline:
 
                 _atomic_write(final_path, final_text)
                 self.state.record_success(
-                    source_hash, content_hash, str(src.resolve()),
-                    str(final_path), title,
-                    f"docuflow {app_config.app.version}", engine,
+                    source_hash,
+                    content_hash,
+                    str(src.resolve()),
+                    str(final_path),
+                    title,
+                    f"docuflow {app_config.app.version}",
+                    engine,
                 )
                 converted.append(str(final_path))
 
@@ -271,8 +299,12 @@ class KnowledgeBasePipeline:
                 error = str(e)
                 if not dry_run:
                     self.state.record_failure(
-                        source_hash, "", str(src), error,
-                        f"docuflow {app_config.app.version}", engine,
+                        source_hash,
+                        "",
+                        str(src),
+                        error,
+                        f"docuflow {app_config.app.version}",
+                        engine,
                     )
                 failed.append({"file": str(src), "error": error})
 
@@ -315,7 +347,8 @@ class KnowledgeBasePipeline:
         if not root.is_dir():
             return []
         return sorted(
-            p for p in root.rglob("*")
+            p
+            for p in root.rglob("*")
             if p.is_file() and p.suffix.lower() in SUPPORTED_SOURCE_EXTS
         )
 
@@ -431,9 +464,11 @@ class KnowledgeBasePipeline:
         attachments_count: int = 0,
     ) -> Dict[str, Any]:
         try:
-            captured_at = datetime.fromtimestamp(
-                src.stat().st_mtime
-            ).astimezone().isoformat(timespec="seconds")
+            captured_at = (
+                datetime.fromtimestamp(src.stat().st_mtime)
+                .astimezone()
+                .isoformat(timespec="seconds")
+            )
         except OSError:
             captured_at = None
 

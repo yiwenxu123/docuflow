@@ -50,7 +50,9 @@ class StateStore:
     """投递状态与去重记录"""
 
     def __init__(self, db_path: Optional[Union[str, Path]] = None):
-        self.db_path = Path(db_path).expanduser() if db_path else default_state_db_path()
+        self.db_path = (
+            Path(db_path).expanduser() if db_path else default_state_db_path()
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.runs_dir = self.db_path.parent / "runs"
         self._init_db()
@@ -63,8 +65,7 @@ class StateStore:
     def _init_db(self) -> None:
         with closing(self._connect()) as conn, conn:
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.executescript(
-                """
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source_hash TEXT NOT NULL,
@@ -93,8 +94,7 @@ class StateStore:
                     failed INTEGER NOT NULL DEFAULT 0,
                     report_json TEXT
                 );
-                """
-            )
+                """)
 
     def find_success_by_source(self, source_hash: str) -> Optional[Dict[str, Any]]:
         return self._find_success("source_hash", source_hash)
@@ -179,7 +179,9 @@ class StateStore:
             )
             return int(cursor.lastrowid)
 
-    def finish_run(self, run_id: int, stats: Dict[str, int], report: Dict[str, Any]) -> None:
+    def finish_run(
+        self, run_id: int, stats: Dict[str, int], report: Dict[str, Any]
+    ) -> None:
         with closing(self._connect()) as conn, conn:
             conn.execute(
                 """
@@ -202,7 +204,9 @@ class StateStore:
     def write_report(self, run_id: int, report: Dict[str, Any]) -> Path:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         path = self.runs_dir / f"{run_id:06d}.json"
-        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         return path
 
     def summary(self) -> Dict[str, Any]:
@@ -215,25 +219,19 @@ class StateStore:
                 if row["status"] in counts:
                     counts[row["status"]] = row["n"]
 
-            last_run = conn.execute(
-                """
+            last_run = conn.execute("""
                 SELECT id, started_at, finished_at, total, converted, skipped, failed
                 FROM runs ORDER BY id DESC LIMIT 1
-                """
-            ).fetchone()
-            recent_runs = conn.execute(
-                """
+                """).fetchone()
+            recent_runs = conn.execute("""
                 SELECT id, started_at, finished_at, total, converted, skipped, failed
                 FROM runs ORDER BY id DESC LIMIT 5
-                """
-            ).fetchall()
-            recent_failures = conn.execute(
-                """
+                """).fetchall()
+            recent_failures = conn.execute("""
                 SELECT source_path, error, created_at
                 FROM documents WHERE status = 'failed'
                 ORDER BY id DESC LIMIT 5
-                """
-            ).fetchall()
+                """).fetchall()
 
         return {
             "db_path": str(self.db_path),

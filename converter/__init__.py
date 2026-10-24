@@ -9,4 +9,4 @@ from .document_converter import DocumentConverter
 __version__ = "2.0.0-dev"
 __author__ = "DocuFlow Team"
 
-__all__ = ['DocumentConverter']
+__all__ = ["DocumentConverter"]

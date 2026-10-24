@@ -107,8 +107,7 @@ def sample_docx(tmp_path):
     md.write_text(SAMPLE_MD, encoding="utf-8")
     out = tmp_path / "sample.docx"
     result = subprocess.run(
-        ["pandoc", str(md), "-o", str(out)],
-        capture_output=True, text=True, timeout=60
+        ["pandoc", str(md), "-o", str(out)], capture_output=True, text=True, timeout=60
     )
     if result.returncode != 0:
         pytest.skip(f"pandoc 无法生成 docx: {result.stderr}")

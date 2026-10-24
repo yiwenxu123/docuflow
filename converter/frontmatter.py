@@ -52,7 +52,7 @@ def split_frontmatter(text: str) -> Tuple[Optional[str], str]:
             block = "".join(lines[1:i]).rstrip("\r\n")
             if block and not re.search(r"^[A-Za-z0-9_\u4e00-\u9fff-]+:", block, re.M):
                 return None, text
-            body = "".join(lines[i + 1:]).lstrip("\r\n")
+            body = "".join(lines[i + 1 :]).lstrip("\r\n")
             return block, body
     return None, text
 

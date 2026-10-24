@@ -13,10 +13,12 @@ from typing import List, Any, Union
 
 try:
     import pypdf as PyPDF2  # 新版本
+
     PDF_SUPPORT = True
 except ImportError:
     try:
         import PyPDF2  # 旧版本兼容
+
         PDF_SUPPORT = True
     except ImportError:
         PDF_SUPPORT = False
@@ -45,10 +47,15 @@ class PdfProcessorMixin:
             ConversionError: 当PDF处理库未安装或文本提取失败时
         """
         if not PDF_SUPPORT:
-            raise ConversionError("PDF处理库 (PyPDF2, pdfplumber) 未安装", error_code="PDF_LIBS_MISSING")
+            raise ConversionError(
+                "PDF处理库 (PyPDF2, pdfplumber) 未安装", error_code="PDF_LIBS_MISSING"
+            )
 
         text_content = []
-        extraction_methods = [("pdfplumber", self._extract_with_pdfplumber), ("PyPDF2", self._extract_with_pypdf2)]
+        extraction_methods = [
+            ("pdfplumber", self._extract_with_pdfplumber),
+            ("PyPDF2", self._extract_with_pypdf2),
+        ]
 
         for name, method in extraction_methods:
             try:
@@ -61,7 +68,9 @@ class PdfProcessorMixin:
             except Exception as e:
                 self.logger.error(f"使用 {name} 提取PDF失败: {e}", exc_info=True)
 
-        raise ConversionError("所有PDF文本提取方法均失败", error_code="PDF_EXTRACTION_FAILED")
+        raise ConversionError(
+            "所有PDF文本提取方法均失败", error_code="PDF_EXTRACTION_FAILED"
+        )
 
     @staticmethod
     def _table_already_in_text(table: List[List[Any]], text: str) -> bool:
@@ -94,7 +103,9 @@ class PdfProcessorMixin:
                 try:
                     tables = page.extract_tables()
                     for table in tables:
-                        if not table or self._table_already_in_text(table, cleaned_text):
+                        if not table or self._table_already_in_text(
+                            table, cleaned_text
+                        ):
                             continue
                         markdown_table = self._convert_table_to_markdown(table)
                         if markdown_table.strip():
@@ -106,7 +117,7 @@ class PdfProcessorMixin:
     def _extract_with_pypdf2(self, pdf_path: Union[str, Path]) -> str:
         """使用PyPDF2从PDF中提取文本作为备用方法。"""
         text_content = []
-        with open(pdf_path, 'rb') as file:
+        with open(pdf_path, "rb") as file:
             pdf_reader = PyPDF2.PdfReader(file)
             for page in pdf_reader.pages:
                 page_text = page.extract_text()
@@ -129,47 +140,49 @@ class PdfProcessorMixin:
             return ""
 
         # 移除CID字符（如 (cid:123)）
-        text = re.sub(r'\(cid:\d+\)', '', text)
+        text = re.sub(r"\(cid:\d+\)", "", text)
 
         # 处理单独的'n'字符和常见的PDF文本问题
         # 先修复常见的单词分割问题
-        text = text.replace('PDFnMarkdow', 'PDF转Markdown')
-        text = text.replace('Markdow', 'Markdown')
-        text = text.replace('PyPDF2npdfplumbern', 'PyPDF2和pdfplumber库')
+        text = text.replace("PDFnMarkdow", "PDF转Markdown")
+        text = text.replace("Markdow", "Markdown")
+        text = text.replace("PyPDF2npdfplumbern", "PyPDF2和pdfplumber库")
 
         # 修复常见的英文单词中的'n'分割问题
         common_fixes = {
-            'docume t': 'document',
-            'seco d': 'second',
-            'co tai s': 'contains',
-            'formatti g': 'formatting',
-            'functio ality': 'functionality',
-            'ge eratio ': 'generation',
-            'specificatio s': 'specifications'
+            "docume t": "document",
+            "seco d": "second",
+            "co tai s": "contains",
+            "formatti g": "formatting",
+            "functio ality": "functionality",
+            "ge eratio ": "generation",
+            "specificatio s": "specifications",
         }
 
         for broken, fixed in common_fixes.items():
             text = text.replace(broken, fixed)
 
         # 合并多个空格
-        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r"[ \t]+", " ", text)
 
         # 处理换行符
-        text = re.sub(r'\n[ \t]+', '\n', text)  # 移除行首空格
-        text = re.sub(r'[ \t]+\n', '\n', text)  # 移除行尾空格
-        text = re.sub(r'\n{3,}', '\n\n', text)  # 多个换行符合并为两个
+        text = re.sub(r"\n[ \t]+", "\n", text)  # 移除行首空格
+        text = re.sub(r"[ \t]+\n", "\n", text)  # 移除行尾空格
+        text = re.sub(r"\n{3,}", "\n\n", text)  # 多个换行符合并为两个
 
         # 移除空行和只包含单个字符的行
-        lines = text.split('\n')
+        lines = text.split("\n")
         cleaned_lines = []
         for line in lines:
             cleaned_line = line.strip()
             if cleaned_line and len(cleaned_line) > 1:
                 cleaned_lines.append(cleaned_line)
 
-        return '\n'.join(cleaned_lines)
+        return "\n".join(cleaned_lines)
 
-    def _convert_pdf_to_markdown(self, pdf_path: Union[str, Path], output_path: Union[str, Path]) -> str:
+    def _convert_pdf_to_markdown(
+        self, pdf_path: Union[str, Path], output_path: Union[str, Path]
+    ) -> str:
         """将PDF转换为Markdown
 
         Args:
@@ -185,9 +198,9 @@ class PdfProcessorMixin:
         # 使用通用清理方法处理内容
         markdown_content = self._clean_content(
             content=markdown_content,
-            content_type='pdf',
+            content_type="pdf",
             filter_images=self.filter_images,
-            clean_content=self.clean_content
+            clean_content=self.clean_content,
         )
 
         # 添加文档头部信息
@@ -197,12 +210,14 @@ class PdfProcessorMixin:
         full_content = header + markdown_content
 
         # 写入输出文件
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(full_content)
 
         return output_path
 
-    def _convert_pdf_to_html(self, pdf_path: Union[str, Path], output_path: Union[str, Path]) -> str:
+    def _convert_pdf_to_html(
+        self, pdf_path: Union[str, Path], output_path: Union[str, Path]
+    ) -> str:
         """将PDF转换为HTML
 
         Args:
@@ -218,9 +233,9 @@ class PdfProcessorMixin:
         # 使用通用清理方法处理内容
         text_content = self._clean_content(
             content=text_content,
-            content_type='pdf',
+            content_type="pdf",
             filter_images=self.filter_images,
-            clean_content=self.clean_content
+            clean_content=self.clean_content,
         )
 
         # 将文本内容转换为HTML格式
@@ -276,12 +291,14 @@ class PdfProcessorMixin:
 </html>"""
 
         # 写入输出文件
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
         return output_path
 
-    def _convert_pdf_to_txt(self, pdf_path: Union[str, Path], output_path: Union[str, Path]) -> str:
+    def _convert_pdf_to_txt(
+        self, pdf_path: Union[str, Path], output_path: Union[str, Path]
+    ) -> str:
         """将PDF转换为纯文本
 
         Args:
@@ -297,9 +314,9 @@ class PdfProcessorMixin:
         # 使用通用清理方法处理内容
         text_content = self._clean_content(
             content=text_content,
-            content_type='text',
+            content_type="text",
             filter_images=self.filter_images,
-            clean_content=self.clean_content
+            clean_content=self.clean_content,
         )
 
         # 添加文档头部信息
@@ -309,7 +326,7 @@ class PdfProcessorMixin:
         full_content = header + text_content
 
         # 写入输出文件
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(full_content)
 
         return output_path
@@ -326,10 +343,13 @@ class PdfProcessorMixin:
         # PDF提取的文本通常不包含图片本身，只包含文本内容
         # 这里主要是清理可能的图片占位符或乱码
         # 移除可能的图片相关乱码或占位符
-        text_content = re.sub(r'\[图\]|\[image\]|\[图片\]', '', text_content, flags=re.IGNORECASE)
+        text_content = re.sub(
+            r"\[图\]|\[image\]|\[图片\]", "", text_content, flags=re.IGNORECASE
+        )
         return text_content
 
     @staticmethod
     def _format_timestamp() -> str:
         import time
-        return time.strftime('%Y-%m-%d %H:%M:%S')
+
+        return time.strftime("%Y-%m-%d %H:%M:%S")

@@ -137,5 +137,6 @@ class TestFormatSupport:
 
     def test_unsupported_conversion_raises(self, converter, sample_md, tmp_path):
         from exceptions import UnsupportedFormatError
+
         with pytest.raises(UnsupportedFormatError):
             converter.convert_file(str(sample_md), ".xlsx", str(tmp_path))

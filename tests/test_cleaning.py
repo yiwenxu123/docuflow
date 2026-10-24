@@ -39,7 +39,9 @@ class TestMarkdownCleanup:
 
     def test_clean_content_disabled_returns_original(self, converter):
         content = "原始内容 ![图](a.jpg)"
-        cleaned = converter._clean_content(content, content_type="markdown", clean_content=False)
+        cleaned = converter._clean_content(
+            content, content_type="markdown", clean_content=False
+        )
         assert cleaned == content
 
 

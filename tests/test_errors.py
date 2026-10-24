@@ -11,7 +11,10 @@ import os
 import pytest
 
 from exceptions import (
-    ConversionError, FileAccessError, FileSizeError, UnsupportedFormatError,
+    ConversionError,
+    FileAccessError,
+    FileSizeError,
+    UnsupportedFormatError,
 )
 
 

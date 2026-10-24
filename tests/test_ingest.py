@@ -24,24 +24,34 @@ class TestVaultDetection:
     def test_detect_open_vault(self, tmp_path, monkeypatch):
         obsidian_dir = tmp_path / "Library" / "Application Support" / "obsidian"
         obsidian_dir.mkdir(parents=True)
-        (obsidian_dir / "obsidian.json").write_text(json.dumps({
-            "vaults": {
-                "1": {"path": "/vault/closed", "open": False},
-                "2": {"path": "/vault/active", "open": True},
-            }
-        }), encoding="utf-8")
+        (obsidian_dir / "obsidian.json").write_text(
+            json.dumps(
+                {
+                    "vaults": {
+                        "1": {"path": "/vault/closed", "open": False},
+                        "2": {"path": "/vault/active", "open": True},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
         assert detect_obsidian_vault() == "/vault/active"
 
     def test_detect_fallback_first_vault(self, tmp_path, monkeypatch):
         obsidian_dir = tmp_path / "Library" / "Application Support" / "obsidian"
         obsidian_dir.mkdir(parents=True)
-        (obsidian_dir / "obsidian.json").write_text(json.dumps({
-            "vaults": {
-                "1": {"path": "/vault/a"},
-                "2": {"path": "/vault/b"},
-            }
-        }), encoding="utf-8")
+        (obsidian_dir / "obsidian.json").write_text(
+            json.dumps(
+                {
+                    "vaults": {
+                        "1": {"path": "/vault/a"},
+                        "2": {"path": "/vault/b"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
         assert detect_obsidian_vault() == "/vault/a"
 
@@ -185,7 +195,10 @@ class TestIngestContract:
         result = pipeline.ingest_to_vault(str(doc), str(vault))
         assert result["converted"] == []
         assert len(result["failed"]) == 1
-        assert "正文" in result["failed"][0]["error"] or "为空" in result["failed"][0]["error"]
+        assert (
+            "正文" in result["failed"][0]["error"]
+            or "为空" in result["failed"][0]["error"]
+        )
 
     def test_html_short_content_fails(self, converter, vault, tmp_path):
         src = tmp_path / "src"

@@ -14,8 +14,7 @@ from validate_corpus import analyze_output, classify_failure  # noqa: E402
 def test_analyze_output_detects_noise(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text(
-        "---\ntitle: 测试\n---\n\n# 标题\n\n"
-        + "## 第 1 页\n\n正文内容。\n\n" * 4,
+        "---\ntitle: 测试\n---\n\n# 标题\n\n" + "## 第 1 页\n\n正文内容。\n\n" * 4,
         encoding="utf-8",
     )
     metrics = analyze_output(doc, min_chars=20)

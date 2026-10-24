@@ -13,9 +13,7 @@ def test_local_image_copied_and_rewritten(tmp_path):
     dest = tmp_path / "vault" / "inbox"
     dest.mkdir(parents=True)
 
-    markdown, count = materialize_images(
-        "![图](pic.png)", src, dest, "note-abc"
-    )
+    markdown, count = materialize_images("![图](pic.png)", src, dest, "note-abc")
 
     assert count == 1
     assert "attachments/note-abc/" in markdown
@@ -71,9 +69,7 @@ def test_outside_image_not_copied(tmp_path):
     dest = tmp_path / "inbox"
     dest.mkdir()
 
-    markdown, count = materialize_images(
-        "![图](../outside.png)", src, dest, "note"
-    )
+    markdown, count = materialize_images("![图](../outside.png)", src, dest, "note")
     assert count == 0
     assert markdown == "![图](../outside.png)"
     assert not (dest / "attachments").exists()

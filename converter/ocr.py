@@ -32,13 +32,17 @@ def needs_ocr(
         if total_pages <= sample_pages:
             indexes = list(range(total_pages))
         else:
-            indexes = sorted({
-                0, 1, total_pages // 2,
-                max(0, total_pages - 2), total_pages - 1,
-            })
+            indexes = sorted(
+                {
+                    0,
+                    1,
+                    total_pages // 2,
+                    max(0, total_pages - 2),
+                    total_pages - 1,
+                }
+            )
         total = sum(
-            len((reader.pages[i].extract_text() or "").strip())
-            for i in indexes
+            len((reader.pages[i].extract_text() or "").strip()) for i in indexes
         )
         return total / len(indexes) < min_chars_per_page
     except Exception:
@@ -62,9 +66,7 @@ def run_ocr(
         str(dst_path),
     ]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError:
         raise RuntimeError("ocrmypdf 未安装")
     except subprocess.TimeoutExpired:

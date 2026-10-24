@@ -35,7 +35,9 @@ class TestStateStore:
 
     def test_run_summary_and_report(self, tmp_path):
         state = StateStore(tmp_path / "state.db")
-        state.record_success("s1", "c1", "/src/a.md", "/vault/a.md", "A", "docuflow", "builtin")
+        state.record_success(
+            "s1", "c1", "/src/a.md", "/vault/a.md", "A", "docuflow", "builtin"
+        )
         state.record_failure("s2", "", "/src/b.pdf", "bad pdf")
 
         run_id = state.start_run()

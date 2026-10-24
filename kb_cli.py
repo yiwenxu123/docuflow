@@ -100,7 +100,9 @@ def cmd_status(args) -> int:
 
     docs = summary["documents"]
     print(f"状态库: {summary['db_path']}")
-    print(f"文档记录: 成功 {docs['success']} | 失败 {docs['failed']} | 总计 {docs['total']}")
+    print(
+        f"文档记录: 成功 {docs['success']} | 失败 {docs['failed']} | 总计 {docs['total']}"
+    )
     if summary.get("vault"):
         print(f"当前 vault: {summary['vault']} -> {summary['dest']}")
 
@@ -176,8 +178,15 @@ def cmd_doctor(args) -> int:
     else:
         print(f"整体状态: {'可用' if ok else '需要处理'}")
         for name, item in checks.items():
-            status = "可用" if item["available"] else ("缺失" if item["required"] else "未安装（可选）")
-            print(f"  {name}: {status}" + (f" ({item['path']})" if item.get("path") else ""))
+            status = (
+                "可用"
+                if item["available"]
+                else ("缺失" if item["required"] else "未安装（可选）")
+            )
+            print(
+                f"  {name}: {status}"
+                + (f" ({item['path']})" if item.get("path") else "")
+            )
     return 0 if ok else 2
 
 
@@ -197,9 +206,9 @@ def _move_unique(src: Path, folder: Path) -> Path:
 
 def _watch_candidates(box: Path) -> list:
     return sorted(
-        p for p in box.iterdir()
-        if (p.is_file() or p.is_dir())
-        and not p.name.startswith((".", "_"))
+        p
+        for p in box.iterdir()
+        if (p.is_file() or p.is_dir()) and not p.name.startswith((".", "_"))
     )
 
 
@@ -214,11 +223,13 @@ def _path_signature(path: Path):
             for child in sorted(path.rglob("*")):
                 if child.is_file():
                     stat = child.stat()
-                    items.append((
-                        str(child.relative_to(path)),
-                        stat.st_size,
-                        stat.st_mtime_ns,
-                    ))
+                    items.append(
+                        (
+                            str(child.relative_to(path)),
+                            stat.st_size,
+                            stat.st_mtime_ns,
+                        )
+                    )
             return ("dir", tuple(items))
     except OSError:
         return None
@@ -318,9 +329,15 @@ def main() -> int:
     p_ingest.add_argument("source", nargs="+", help="源文件或目录（可多个）")
     p_ingest.add_argument("--vault", help="Obsidian vault 路径（缺省自动检测）")
     p_ingest.add_argument("--dest", help="vault 内目标子目录（缺省 01-raw/inbox）")
-    p_ingest.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown")
-    p_ingest.add_argument("--dry-run", action="store_true", help="只预演，不写文件、不写状态")
-    p_ingest.add_argument("--allow-duplicate", action="store_true", help="跳过哈希去重（仍不覆盖）")
+    p_ingest.add_argument(
+        "--markitdown", action="store_true", help="优先使用 MarkItDown"
+    )
+    p_ingest.add_argument(
+        "--dry-run", action="store_true", help="只预演，不写文件、不写状态"
+    )
+    p_ingest.add_argument(
+        "--allow-duplicate", action="store_true", help="跳过哈希去重（仍不覆盖）"
+    )
     p_ingest.add_argument(
         "--ocr",
         choices=["auto", "off"],
@@ -353,7 +370,9 @@ def main() -> int:
     p_watch.add_argument("--vault", help="Obsidian vault 路径（缺省自动检测）")
     p_watch.add_argument("--dest", help="vault 内目标子目录")
     p_watch.add_argument("--interval", type=int, default=30, help="扫描间隔秒数")
-    p_watch.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown")
+    p_watch.add_argument(
+        "--markitdown", action="store_true", help="优先使用 MarkItDown"
+    )
     p_watch.add_argument(
         "--ocr", choices=["auto", "off"], default="auto", help="扫描 PDF 的 OCR 策略"
     )
@@ -363,8 +382,12 @@ def main() -> int:
         default="auto",
         help="PDF 抽取引擎",
     )
-    p_watch.add_argument("--keep-originals", action="store_true", help="保留投递箱中的原文件")
-    p_watch.add_argument("--once", action="store_true", help="只处理一轮后退出（调试/测试）")
+    p_watch.add_argument(
+        "--keep-originals", action="store_true", help="保留投递箱中的原文件"
+    )
+    p_watch.add_argument(
+        "--once", action="store_true", help="只处理一轮后退出（调试/测试）"
+    )
     p_watch.set_defaults(func=cmd_watch)
 
     args = parser.parse_args()

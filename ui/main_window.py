@@ -8,19 +8,47 @@ from pathlib import Path
 
 try:
     from PySide6.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar,
-        QMessageBox, QSplitter, QTabWidget, QFormLayout, QLineEdit,
-        QComboBox, QLabel, QCheckBox,
+        QApplication,
+        QMainWindow,
+        QWidget,
+        QVBoxLayout,
+        QHBoxLayout,
+        QPushButton,
+        QListWidget,
+        QFileDialog,
+        QTextEdit,
+        QProgressBar,
+        QMessageBox,
+        QSplitter,
+        QTabWidget,
+        QFormLayout,
+        QLineEdit,
+        QComboBox,
+        QLabel,
+        QCheckBox,
     )
     from PySide6.QtCore import Qt, Signal, QObject, QThread, QUrl
     from PySide6.QtGui import QDropEvent, QDesktopServices
 except ImportError:
     from PyQt5.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar,
-        QMessageBox, QSplitter, QTabWidget, QFormLayout, QLineEdit,
-        QComboBox, QLabel, QCheckBox,
+        QApplication,
+        QMainWindow,
+        QWidget,
+        QVBoxLayout,
+        QHBoxLayout,
+        QPushButton,
+        QListWidget,
+        QFileDialog,
+        QTextEdit,
+        QProgressBar,
+        QMessageBox,
+        QSplitter,
+        QTabWidget,
+        QFormLayout,
+        QLineEdit,
+        QComboBox,
+        QLabel,
+        QCheckBox,
     )
     from PyQt5.QtCore import Qt, pyqtSignal as Signal, QObject, QThread, QUrl
     from PyQt5.QtGui import QDropEvent, QDesktopServices
@@ -329,7 +357,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "完成", message)
         logger.info(
             "投递完成：成功 %s，跳过 %s，失败 %s，共 %s",
-            converted, skipped, len(failed), total,
+            converted,
+            skipped,
+            len(failed),
+            total,
         )
 
     def ingest_failed(self, error):
@@ -372,7 +403,8 @@ class MainWindow(QMainWindow):
                 paths.append(str(path))
             elif path.is_dir():
                 paths.extend(
-                    str(p) for p in path.rglob("*")
+                    str(p)
+                    for p in path.rglob("*")
                     if p.is_file() and is_supported_file(str(p))
                 )
         self._add_paths(paths)

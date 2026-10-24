@@ -10,7 +10,10 @@ import os
 
 import pytest
 
-from converter.markitdown_integration import MarkItDownIntegration, get_markitdown_integration
+from converter.markitdown_integration import (
+    MarkItDownIntegration,
+    get_markitdown_integration,
+)
 
 
 @pytest.fixture

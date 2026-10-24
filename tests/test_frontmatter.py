@@ -13,19 +13,21 @@ from converter.frontmatter import (
 
 class TestFrontmatter:
     def test_render(self):
-        text = render_frontmatter({
-            "title": '报告 "A"',
-            "pages": 2,
-            "ok": True,
-            "empty": None,
-            "tags": ["a", "b"],
-        })
+        text = render_frontmatter(
+            {
+                "title": '报告 "A"',
+                "pages": 2,
+                "ok": True,
+                "empty": None,
+                "tags": ["a", "b"],
+            }
+        )
         assert text.startswith("---\n")
         assert 'title: "报告 \\"A\\""' in text
         assert "pages: 2" in text
         assert "ok: true" in text
         assert "empty" not in text
-        assert "  - \"a\"" in text
+        assert '  - "a"' in text
         assert text.endswith("---\n\n")
 
     def test_extract_title(self):

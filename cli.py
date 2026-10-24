@@ -43,7 +43,9 @@ def main() -> int:
     output_path = Path(args.output) if args.output else None
     output_is_dir = bool(
         output_path
-        and (batch_mode or output_path.is_dir() or str(args.output).endswith(("/", "\\")))
+        and (
+            batch_mode or output_path.is_dir() or str(args.output).endswith(("/", "\\"))
+        )
     )
 
     if batch_mode and (not output_path or not output_is_dir):
@@ -60,7 +62,9 @@ def main() -> int:
         output_path.mkdir(parents=True, exist_ok=True)
 
     if args.format:
-        target_format = args.format if args.format.startswith(".") else f".{args.format}"
+        target_format = (
+            args.format if args.format.startswith(".") else f".{args.format}"
+        )
     elif output_path is not None:
         target_format = output_path.suffix
     else:
@@ -84,7 +88,9 @@ def main() -> int:
             print(f"输入: {input_path}")
             print(f"输出: {out}")
         try:
-            result_path = converter.convert_file(str(input_path), str(out), target_format)
+            result_path = converter.convert_file(
+                str(input_path), str(out), target_format
+            )
             print(result_path)
         except Exception as e:
             print(f"转换失败: {input_path} - {e}", file=sys.stderr)

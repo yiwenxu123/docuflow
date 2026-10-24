@@ -14,9 +14,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import unquote, urlparse
 
-IMAGE_RE = re.compile(
-    r'!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(\s+"[^"]*")?\s*\)'
-)
+IMAGE_RE = re.compile(r'!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(\s+"[^"]*")?\s*\)')
 
 _MIME_EXT = {
     "image/png": ".png",
