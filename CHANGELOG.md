@@ -2,7 +2,31 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [Unreleased] - v2.0 收缩
+## [Unreleased] - Phase 2 ingest contract
+
+### 新增
+- SQLite 状态库：记录来源/输出/哈希/结果，默认 `~/Library/Application Support/DocuFlow/state.db`，可用 `DOCUFLOW_STATE_DB` 覆盖
+- Frontmatter：`title` / `source` / `source_type` / `captured_at` / `converted_at` / `converter` / `engine` / `source_hash` / `content_hash` / `language` / `pages` / `attachments`
+- 去重：同一来源文件跳过；不同格式但内容相同也跳过
+- 写入安全：原子写入；同名文件追加内容哈希后缀，绝不覆盖
+- CLI：`ingest --dry-run --json --allow-duplicate`、`status`、`doctor`
+- 每次运行生成 `runs/<id>.json` 报告；`--json` 输出稳定结构
+- 测试：新增状态库、frontmatter、去重、不覆盖、dry-run、CLI JSON 与 20 文件 Gate 2
+
+### 变更
+- `ingest` 返回 `converted` / `skipped` / `planned` / `failed`，GUI 显示跳过数量
+- Markdown/TXT 源文件改为轻量规范化，不再删除 `Code`、`Share` 等正常词，保留图片链接
+- 已有 frontmatter 的 Markdown 完整保留原字段，投递元数据写入 `docuflow` 子块
+- GUI 多文件投递合并为一次 run，不再拆成多条状态记录
+- MarkItDown 可用性探测增加缓存与超时，避免启动慢导致 `--markitdown` 时好时坏
+- 测试从 56 个增加到 77 个，全部通过
+
+### 已知限制
+- MarkItDown 仍使用本机 `~/markitdown-env` 路径；Phase 3 改为标准安装
+- HTML 的 Gist 专用清洗仍在；Phase 3 替换为正文抽取
+- 尚未实现图片附件落盘、OCR、PPTX/EPUB
+
+## [2.0.0-phase1] - 2026-10-24
 
 ### 移除
 - RAG 全家桶：分块、向量索引、语义检索、`/kb` 问答、`llm_qa`、`vector_store` 及相关测试
@@ -21,10 +45,10 @@
 - CI 移除已删除入口的引用，改为安装 `requirements-dev.txt`
 - 测试从 110 个收缩到 56 个，全部通过
 
-### 已知限制
+### 当时的已知限制（去重/覆盖/契约已在 Phase 2 修复）
 - 尚未实现内容哈希去重、原子写入、frontmatter、manifest、`--dry-run`/`--json`
 - 尚未实现扫描版 PDF 的 OCR
-- 同名文件仍可能覆盖，Phase 2 修复
+- 同名文件仍可能覆盖
 
 ## [1.3.0] - 2026-08-04
 

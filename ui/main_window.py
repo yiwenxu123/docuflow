@@ -55,16 +55,8 @@ class IngestWorker(QObject):
         pipeline = KnowledgeBasePipeline()
         try:
             result = pipeline.ingest_to_vault(
-                self.files[0], self.vault_dir, dest_subdir=self.dest_subdir
+                self.files, self.vault_dir, dest_subdir=self.dest_subdir
             )
-            # 多文件时逐个投递
-            for f in self.files[1:]:
-                extra = pipeline.ingest_to_vault(
-                    f, self.vault_dir, dest_subdir=self.dest_subdir
-                )
-                result["converted"].extend(extra["converted"])
-                result["failed"].extend(extra["failed"])
-                result["total_files"] += extra["total_files"]
             self.finished.emit(result)
         except Exception as e:
             self.failed.emit(str(e))
@@ -312,8 +304,11 @@ class MainWindow(QMainWindow):
         output_dir = result.get("output_dir", "")
         total = result.get("total_files", 0)
         converted = len(result.get("converted", []))
+        skipped = len(result.get("skipped", []))
         failed = result.get("failed", [])
         msg = f"投递完成：{converted}/{total} 个文件 → {output_dir}"
+        if skipped:
+            msg += f"\n跳过重复文件：{skipped} 个"
         if failed:
             msg += f"\n\n⚠️ {len(failed)} 个失败："
             for f in failed[:5]:

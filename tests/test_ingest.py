@@ -70,14 +70,15 @@ class TestVaultDestSelection:
         assert default_vault_dest(str(tmp_path)) == "01-raw/inbox"
 
 
+@pytest.fixture
+def vault(tmp_path):
+    v = tmp_path / "vault"
+    (v / "01-raw" / "inbox").mkdir(parents=True)
+    return v
+
+
 class TestIngestToVault:
     """投递逻辑"""
-
-    @pytest.fixture
-    def vault(self, tmp_path):
-        v = tmp_path / "vault"
-        (v / "01-raw" / "inbox").mkdir(parents=True)
-        return v
 
     def test_ingest_mixed_sources(self, converter, sample_md, sample_pdf, vault):
         sources = vault.parent / "sources"
@@ -94,6 +95,12 @@ class TestIngestToVault:
         out_dir = Path(result["output_dir"])
         assert (out_dir / "a.md").exists()
         assert (out_dir / "b_pdf.md").exists()
+
+    def test_ingest_accepts_file_list(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault([str(sample_md)], str(vault))
+        assert result["total_files"] == 1
+        assert len(result["converted"]) == 1
 
     def test_ingest_custom_dest(self, converter, sample_md, vault):
         pipeline = KnowledgeBasePipeline(converter=converter)
@@ -114,3 +121,140 @@ class TestIngestToVault:
         assert len(result["converted"]) == 0
         assert len(result["failed"]) == 1
         assert "bad.docx" in result["failed"][0]["file"]
+
+
+class TestIngestContract:
+    """frontmatter 与去重契约"""
+
+    def test_frontmatter_and_dedupe(self, converter, vault, tmp_path):
+        src = tmp_path / "single"
+        src.mkdir()
+        doc = src / "doc.md"
+        doc.write_text("# 标题\n\n正文内容", encoding="utf-8")
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert len(first["converted"]) == 1
+
+        output = Path(first["converted"][0])
+        text = output.read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        assert "source_hash:" in text
+        assert "content_hash:" in text
+        assert 'title: "标题"' in text
+
+        second = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert second["converted"] == []
+        assert len(second["skipped"]) == 1
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 1
+
+    def test_markdown_content_not_overcleaned(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "note.md"
+        doc.write_text(
+            "# 标题\n\nCode 与 Share 都是正常词。\n\n![图](img.png)",
+            encoding="utf-8",
+        )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        text = Path(result["converted"][0]).read_text(encoding="utf-8")
+
+        assert "Code" in text
+        assert "Share" in text
+        assert "![图](img.png)" in text
+
+    def test_existing_frontmatter_preserved(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "note.md"
+        doc.write_text(
+            "---\ntags:\n  - test\naliases:\n  - 别名\n---\n# 标题\n\n正文",
+            encoding="utf-8",
+        )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        text = Path(result["converted"][0]).read_text(encoding="utf-8")
+
+        assert text.startswith("---\n")
+        assert len([line for line in text.splitlines() if line.strip() == "---"]) == 2
+        assert "tags:" in text
+        assert "  - test" in text
+        assert "aliases:" in text
+        assert "docuflow:" in text
+        assert "  source_hash:" in text
+
+    def test_dry_run_does_not_write(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(sample_md), str(vault), dry_run=True)
+        assert result["converted"] == []
+        assert len(result["planned"]) == 1
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 0
+
+
+class TestNoOverwrite:
+    """同名文件不得覆盖"""
+
+    def test_collision_gets_hash_suffix(self, converter, tmp_path):
+        vault = tmp_path / "vault"
+        (vault / "01-raw" / "inbox").mkdir(parents=True)
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        (a / "same.md").write_text("# A\n\nfirst content", encoding="utf-8")
+        (b / "same.md").write_text("# B\n\nsecond content", encoding="utf-8")
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(a), str(vault))
+        first_path = Path(first["converted"][0])
+        first_text = first_path.read_text(encoding="utf-8")
+
+        second = pipeline.ingest_to_vault(str(b), str(vault))
+        second_path = Path(second["converted"][0])
+
+        assert second_path != first_path
+        assert first_path.read_text(encoding="utf-8") == first_text
+        assert second_path.exists()
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 2
+
+
+class TestAllowDuplicate:
+    """显式允许重复时生成副本，不覆盖"""
+
+    def test_allow_duplicate_creates_copy(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(sample_md), str(vault))
+        second = pipeline.ingest_to_vault(
+            str(sample_md), str(vault), allow_duplicate=True
+        )
+        assert len(first["converted"]) == 1
+        assert len(second["converted"]) == 1
+        assert second["converted"][0] != first["converted"][0]
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 2
+
+
+class TestGateTwo:
+    """Gate 2：20 个文件二次投递全部跳过"""
+
+    def test_20_files_second_run_skips_all(self, converter, tmp_path):
+        vault = tmp_path / "vault"
+        (vault / "01-raw" / "inbox").mkdir(parents=True)
+        src = tmp_path / "src"
+        src.mkdir()
+        for i in range(20):
+            (src / f"doc{i:02d}.md").write_text(
+                f"# 文档 {i}\n\n这是第 {i} 篇内容。", encoding="utf-8"
+            )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(src), str(vault))
+        assert len(first["converted"]) == 20
+        assert first["failed"] == []
+
+        second = pipeline.ingest_to_vault(str(src), str(vault))
+        assert second["converted"] == []
+        assert len(second["skipped"]) == 20
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 20

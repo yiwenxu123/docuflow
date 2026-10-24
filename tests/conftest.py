@@ -19,6 +19,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from converter.document_converter import DocumentConverter  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def isolate_docuflow_state(tmp_path, monkeypatch):
+    """避免测试写入用户真实的状态库"""
+    monkeypatch.setenv("DOCUFLOW_STATE_DB", str(tmp_path / "state.db"))
+
+
 SAMPLE_MD = """# 测试文档
 
 ## 二级标题
