@@ -119,39 +119,6 @@ class TestHtmlConversions:
         assert "test.jpg" not in content
 
 
-class TestBatchConversions:
-    """批量转换"""
-
-    def test_batch_convert(self, converter, sample_md, sample_xlsx, tmp_path):
-        out_dir = tmp_path / "batch"
-        results = converter.batch_convert(
-            [str(sample_md), str(sample_xlsx)], ".html", str(out_dir)
-        )
-        assert len(results) == 2
-        for r in results:
-            assert os.path.exists(r)
-            assert r.endswith(".html")
-
-    def test_batch_convert_partial_failure(self, converter, sample_md, tmp_path):
-        """批量中混入坏文件，成功的应照常完成"""
-        bad = tmp_path / "broken.docx"
-        bad.write_bytes(b"not a real docx file")
-        out_dir = tmp_path / "batch2"
-        results = converter.batch_convert(
-            [str(sample_md), str(bad)], ".html", str(out_dir)
-        )
-        # 只有 md 成功
-        assert len(results) == 1
-        assert results[0].endswith(".html")
-
-    def test_async_batch_convert(self, converter, sample_md, sample_xlsx, tmp_path):
-        out_dir = tmp_path / "batch3"
-        results = converter.async_batch_convert(
-            [str(sample_md), str(sample_xlsx)], ".txt", str(out_dir), max_workers=2
-        )
-        assert len(results) == 2
-
-
 class TestFormatSupport:
     """格式支持判断"""
 

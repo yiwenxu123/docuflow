@@ -68,34 +68,3 @@ class TestBrokenFiles:
         bad.write_bytes(b"not a real xlsx")
         with pytest.raises(ConversionError):
             converter.convert_file(str(bad), ".md", str(tmp_path))
-
-
-class TestBatchValidation:
-    """批次验证"""
-
-    def test_validate_file_batch(self, converter, sample_md, tmp_path):
-        missing = str(tmp_path / "missing.md")
-        bad_ext = tmp_path / "file.xyz"
-        bad_ext.write_text("x")
-        result = converter.validate_file_batch([str(sample_md), missing, str(bad_ext)])
-        assert result["valid_count"] == 1
-        assert result["invalid_count"] == 2
-        assert result["valid_files"] == [str(sample_md)]
-
-
-class TestStats:
-    """统计信息"""
-
-    def test_stats_track_conversions(self, converter, sample_md, tmp_path):
-        converter.reset_stats()
-        converter.convert_file(str(sample_md), ".docx", str(tmp_path))
-        stats = converter.get_stats()
-        assert stats["total_conversions"] >= 1
-        assert stats["successful_conversions"] >= 1
-
-    def test_stats_record_failures(self, converter, tmp_path):
-        converter.reset_stats()
-        with pytest.raises(FileAccessError):
-            converter.convert_file(str(tmp_path / "missing.md"), ".docx", str(tmp_path))
-        stats = converter.get_stats()
-        assert stats["failed_conversions"] >= 1

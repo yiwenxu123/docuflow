@@ -6,8 +6,8 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
         QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar, 
-        QMessageBox, QSplitter, QTabWidget, QGroupBox, QFormLayout, 
-        QLineEdit, QComboBox, QLabel, QDialog, QDialogButtonBox
+        QMessageBox, QSplitter, QTabWidget, QFormLayout,
+        QLineEdit, QComboBox, QLabel
     )
     from PySide6.QtCore import Qt, Signal, QObject, QThread
     from PySide6.QtGui import QDropEvent
@@ -15,8 +15,8 @@ except ImportError:
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
         QPushButton, QListWidget, QFileDialog, QTextEdit, QProgressBar, 
-        QMessageBox, QSplitter, QTabWidget, QGroupBox, QFormLayout, 
-        QLineEdit, QComboBox, QLabel, QDialog, QDialogButtonBox
+        QMessageBox, QSplitter, QTabWidget, QFormLayout,
+        QLineEdit, QComboBox, QLabel
     )
     from PyQt5.QtCore import Qt, pyqtSignal as Signal, QObject, QThread
     from PyQt5.QtGui import QDropEvent
@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         self.start_conversion_button.setStyleSheet("font-size: 16px; padding: 10px;")
 
         self.ingest_button = QPushButton("📥 投递到知识库")
-        self.ingest_button.setToolTip("选择文件投递到 LLM Wiki 素材库（raw/sources），自动检测项目")
+        self.ingest_button.setToolTip("选择文件投递到 Obsidian 知识库收件箱（默认 01-raw/inbox），自动检测 vault")
         self.ingest_button.setStyleSheet("font-size: 15px; padding: 8px;")
 
         right_layout.addWidget(tab_widget)
@@ -222,16 +222,8 @@ class MainWindow(QMainWindow):
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
         
-        # 设置基本配置
-        logging.basicConfig(
-            level=config.logging.level,
-            format=config.logging.format,
-            handlers=[
-                logging.FileHandler(config.logging.file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
-        )
-        
+        config.setup_logging()
+
         # 添加GUI日志处理器
         log_formatter = logging.Formatter(config.logging.format)
         self.log_widget_handler.setFormatter(log_formatter)
@@ -288,17 +280,13 @@ class MainWindow(QMainWindow):
             self.output_dir_edit.setText(directory)
 
     def ingest_to_kb(self):
-        """一键投递素材到 LLM Wiki 知识库"""
-        from converter.kb_pipeline import detect_llmwiki_project, detect_obsidian_vault
-        vault_dir = detect_llmwiki_project() or detect_obsidian_vault()
+        """一键投递素材到 Obsidian 知识库收件箱"""
+        from converter.kb_pipeline import default_vault_dest, detect_obsidian_vault
+        vault_dir = detect_obsidian_vault()
         if not vault_dir:
-            QMessageBox.warning(self, "提示", "未检测到 LLM Wiki 项目或 Obsidian vault")
+            QMessageBox.warning(self, "提示", "未检测到 Obsidian vault")
             return
-        if (Path(vault_dir) / ".llm-wiki").exists():
-            dest = "raw/sources/inbox"
-        else:
-            from converter.kb_pipeline import default_vault_dest
-            dest = default_vault_dest(vault_dir)
+        dest = default_vault_dest(vault_dir)
 
         files, _ = QFileDialog.getOpenFileNames(
             self, "选择要投递的文件", "", "文档 (*.pdf *.docx *.xlsx *.md *.html *.txt)"
@@ -528,39 +516,6 @@ class MainWindow(QMainWindow):
             if file_path not in [self.file_list_widget.item(i).text() 
                                for i in range(self.file_list_widget.count())]:
                 self.file_list_widget.addItem(file_path)
-
-class FileTypeFilterDialog(QDialog):
-    """文件类型过滤对话框"""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("选择文件类型")
-        self.setModal(True)
-        self.resize(300, 200)
-        
-        layout = QVBoxLayout(self)
-        
-        self.file_type_combo = QComboBox()
-        self.file_type_combo.addItems([
-            "所有文件 (*.*)",
-            "PDF文件 (*.pdf)",
-            "Word文件 (*.docx)",
-            "Excel文件 (*.xlsx)",
-            "图片文件 (*.jpg *.png)",
-            "文本文件 (*.txt)",
-            "Markdown文件 (*.md)"
-        ])
-        
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        
-        layout.addWidget(QLabel("选择文件类型："))
-        layout.addWidget(self.file_type_combo)
-        layout.addWidget(buttons)
-    
-    def get_selected_filter(self):
-        """获取选择的文件过滤器"""
-        return self.file_type_combo.currentText()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -2,12 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [Unreleased]
+## [Unreleased] - v2.0 收缩
+
+### 移除
+- RAG 全家桶：分块、向量索引、语义检索、`/kb` 问答、`llm_qa`、`vector_store` 及相关测试
+- Web 界面：`main_web.py`、Flask 上传/下载/统计页面、`templates/`、`static/`
+- LLM Wiki 遗留：项目检测、`raw/sources` 自动分类、旧 `status` 命令、桌面投递箱 watcher
+- 兼容壳与历史包袱：`main_cli.py`、交互式 CLI、`clean_filtered_file.py`、桌面快捷方式脚本
+- 过度设计：统计面板、性能监控、缓存、重试框架、`utils/logger.py`、`utils/performance.py`、`utils/error_handler.py`
+- 虚假格式承诺：PPTX、EPUB、PDF 导出从支持矩阵和文档中移除
+- `legacy_tests/` 与一次性产物（日志、测试大文件、旧输出）归档到本地 `archive/`
 
 ### 变更
-- 知识库工作流闭环：my-wiki 从主 vault 迁出为独立 Obsidian vault（`~/Documents/my-wiki`），
-  素材层符号链接替换为真实目录，LLM Wiki Source Auto-Watch 对当前项目生效，
-  DocuFlow ingest → raw/sources → 自动 wiki 生成全链路打通
+- 项目定位收缩为**知识库收件箱网关**：只做“转 Markdown + 投递到 Obsidian 收件箱”
+- 默认投递目录改为 `01-raw/inbox`，不再根据 `markitdown-output` 是否存在隐式切换
+- `kb_cli.py` 只保留 `ingest`；配置文件与 `utils/file_utils.py` 收敛为单一事实来源
+- 启动器不再静默安装 Homebrew/依赖；缺失环境时给出明确提示
+- CI 移除已删除入口的引用，改为安装 `requirements-dev.txt`
+- 测试从 110 个收缩到 56 个，全部通过
+
+### 已知限制
+- 尚未实现内容哈希去重、原子写入、frontmatter、manifest、`--dry-run`/`--json`
+- 尚未实现扫描版 PDF 的 OCR
+- 同名文件仍可能覆盖，Phase 2 修复
 
 ## [1.3.0] - 2026-08-04
 

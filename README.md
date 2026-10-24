@@ -1,196 +1,119 @@
-# DocuFlow 文档转换工具 🎯
+# DocuFlow — 知识库收件箱工具
 
-## 📌 定位：知识库素材预处理工具（Obsidian 的"原料车间"）
+## 定位
 
-DocuFlow 把**任意格式的文档**（PDF/DOCX/XLSX/网页/Gist 导出）转换为**干净的、LLM 友好的 Markdown**，投递到你的 Obsidian 知识库原始素材层，由你现有的 LLM Wiki / AI 工作流自动接管生成 wiki。
+DocuFlow 现在只做一件事：
 
-```
-任意文档 → DocuFlow（拖拽/批量/深度清洗）→ 01-raw/markitdown-output/
-    → Obsidian + LLM Wiki（lancedb 检索 + wiki 自动生成）接管
-```
+> 把 PDF / Word / Excel / HTML / Markdown / 纯文本转成 Markdown，投递到 Obsidian 知识库的收件箱（默认 `01-raw/inbox`）。
 
-> 💡 **与 LLM Wiki 的分工**：LLM Wiki 负责"知识编译"（raw → wiki 页面的自动生成与语义检索）；DocuFlow 负责"素材预处理"（把 PDF/DOCX/网页变成干净 Markdown 送进 raw 层）。两者互补，不重复。
+它是知识库的“收件箱网关”，不是文档转换全家桶，也不是 RAG 平台。
 
-## ✅ 双击即用
+**明确不做：**
 
-### 🚀 推荐启动方式
-**双击 `DocuFlow-极速启动器.command`** - 自动检测环境、安装依赖并启动
+- 不做 RAG、向量检索、问答页面；
+- 不做 Web 服务；
+- 不做按文件名自动分类；
+- 不做 md→pdf/docx 反向导出（PDF 导出需要 LaTeX，当前不声明支持）；
+- 不绑定 LLM Wiki；只认 Obsidian vault。
 
-### 🎯 特性
-- ✅ **全自动安装**：Homebrew + pandoc + Python依赖
-- ✅ **智能检测**：自动识别系统环境
-- ✅ **国内镜像**：使用清华镜像源，安装更快
-- ✅ **拖拽/批量转换**：支持文件夹批量处理
-- ✅ **深度清洗**：自动去除 Gist/HTML 页面结构残留（`gist.github.com`、CSS 类名、文件路径引用等）
-- ✅ **MarkItDown 引擎**：高质量 LLM 友好输出
+当前是 v2.0 收缩后的过渡版本：RAG/Web/LLM Wiki 遗留已删除，去重、frontmatter、原子写入、OCR 会在下一阶段补上。**在下一阶段完成前，同名文件仍可能被覆盖，请先备份或使用独立目录试投。**
 
-### 📋 支持的格式转换
-| 输入格式 | 可转输出格式 |
-|----------|-------------|
-| **PDF** → | Markdown, TXT, HTML, DOCX |
-| **DOCX** → | PDF, HTML, Markdown, EPUB |
-| **Excel** → | HTML, DOCX, Markdown |
-| **PPTX** → | PDF, HTML, Markdown |
-| **Markdown** → | PDF, DOCX, HTML, EPUB |
-| **HTML** → | PDF, DOCX, Markdown |
-
-## 🖥️ 使用方式
-
-#### 1. ⚡ 极速启动器（强烈推荐）
-```bash
-双击：DocuFlow-极速启动器.command
-```
-**特点**：首次安装后，后续启动仅需2-3秒，智能缓存，一键桌面
-
-#### 2. 🎯 创建桌面快捷方式
-```bash
-双击：创建桌面快捷方式.command
-```
-**特点**：创建美观桌面图标，支持启动台和Dock栏
-
-#### 3. 💻 命令行工具
-```bash
-# 转换单个文件
-./venv/bin/python3 cli.py input.pdf -o output.md
-
-# 批量转换
-./venv/bin/python3 cli.py *.pdf -f md -o output_dir/
-
-# 查看帮助
-./venv/bin/python3 cli.py --help
-```
-
-#### 4. 🌐 Web界面
-```bash
-./venv/bin/python3 main_web.py
-# 访问 http://localhost:5003
-```
-
-#### 5. 📥 投递素材到知识库（核心用法）
-把任意格式的文档集转换为干净 Markdown，直接投递到 LLM Wiki 素材库（或 Obsidian vault）：
+## 安装
 
 ```bash
-# 一键投递：自动检测 LLM Wiki 项目 → my-wiki/raw/sources/inbox（LLM Wiki 自动接管）
+brew install pandoc
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+MarkItDown 是可选引擎；当前沿用本机 `~/markitdown-env/bin/markitdown`，下一阶段会改为标准安装。
+
+## 使用
+
+### 1. 投递到知识库（核心用法）
+
+```bash
+# 自动检测当前打开的 Obsidian vault，投递到 01-raw/inbox
 ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理
 
-# 指定分类目录
-./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --dest raw/sources/ai
+# 指定 vault 和目标子目录
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 \
+  --vault ~/Documents/我的123 \
+  --dest 01-raw/inbox
 
-# 优先用 MarkItDown（高质量 LLM 输出）
+# 优先使用 MarkItDown
 ./venv/bin/python3 kb_cli.py ingest ~/Downloads/待整理 --markitdown
-
-# 查看 LLM Wiki 处理状态（队列进度 / watch 快照 / wiki 页面数）
-./venv/bin/python3 kb_cli.py status
-
-# GUI 版：主界面点击「📥 投递到知识库」按钮，选文件即投递
 ```
 
-**行为**：
-- 自动检测：优先 LLM Wiki 项目（读其应用配置），其次 Obsidian 当前打开的 vault
-- LLM Wiki 项目默认**按文件名自动分类**（AI/写作/方法论/书籍等关键词 → `raw/sources/<分类>/`，未命中进 inbox）
-- 普通 vault 自动选择 01-raw 结构；`--dest` 可固定目标
-- 转换时自动去除 Gist/HTML 页面结构残留，非 Markdown 源文件带格式后缀命名避免冲突
-- 投递后 LLM Wiki 的 Source Auto-Watch 自动检测并生成 wiki
+投递规则：
 
-#### 5.1 📥 桌面投递箱（拖入即入库）
-监听固定文件夹，新文件自动投递 + 自动分类，无需任何命令：
+- 目标目录缺省为 `01-raw/inbox`，不再根据 `markitdown-output` 是否存在自动切换；
+- 非 Markdown 源文件输出为 `<原名>_<格式>.md`，避免同名覆盖；
+- 当前阶段没有内容哈希去重，重复投递会生成同名文件（可能覆盖）。
+
+### 2. GUI
 
 ```bash
-# 启动投递箱（默认监听 ~/Documents/素材投递箱）
-./venv/bin/python3 kb_cli.py watch
-
-# 自定义投递箱与扫描间隔
-./venv/bin/python3 kb_cli.py watch --box ~/Downloads/待整理 --interval 60
+./venv/bin/python3 main_pyside.py
 ```
 
-把文件拖入投递箱即自动转换投递到知识库；已处理文件移入 `_processed/`，失败移入 `_failed/`。
+或双击 `DocuFlow-极速启动器.command`。启动器只检查 pandoc 和 venv，不会静默安装 Homebrew 或依赖。
 
-#### 5.2 ✂️ 剪藏统一（Obsidian Web Clipper）
-- **Obsidian Web Clipper**（浏览器插件）：剪藏目标设置为 `my-wiki/raw/sources/inbox`（素材直接进 LLM Wiki 素材库，watch 自动处理）
-- **微信读书/公众号导出**：导出 md 后直接复制到 `my-wiki/raw/sources/inbox`，或丢进桌面投递箱
-- **手机端素材**：用任意方式传到 Mac 后丢进投递箱即可
+GUI 有两个动作：
 
-> 约定：所有需要 LLM Wiki 处理的素材最终汇入 `~/Documents/my-wiki/raw/sources/`，
-> 入口可以是剪藏插件、投递箱、DocuFlow GUI 或直接拖拽，LLM Wiki 统一接管。
+- **开始转换**：只转换到指定目录；
+- **投递到知识库**：转换并投递到 Obsidian 收件箱。
 
-#### 6. 🧠 通用能力（可选）：分块 / 向量检索 / 问答
-> ⚠️ 如果你使用 Obsidian + LLM Wiki（自带 lancedb 语义检索），以下功能可跳过。
-> 保留它们是为了让 DocuFlow 在不依赖 Obsidian 的场景下也能构建独立知识库。
+下一阶段会把两个动作合并成一个“转换并投递”。
+
+### 3. 仅转换，不投递
 
 ```bash
-# 构建独立知识库管道：转换 → 语义分块（JSONL）
-./venv/bin/python3 kb_cli.py process ~/Documents/sources ~/kb_out
-
-# 向量索引 + 语义检索（无 API key 时自动用本地离线引擎，失败自动降级）
-./venv/bin/python3 kb_cli.py index ~/kb_out/chunks.jsonl ~/kb_out/.vector
-./venv/bin/python3 kb_cli.py search "知识库的核心理念" ~/kb_out/.vector --top-k 5
-
-# Web 问答页（RAG）：启动 Web 后访问 http://localhost:5003/kb
-./venv/bin/python3 main_web.py
+./venv/bin/python3 cli.py input.docx -f .md
+./venv/bin/python3 cli.py a.pdf b.docx -f .md -o output_dir/
 ```
 
-- Embedding 引擎：检测到 `OPENAI_API_KEY`/`DASHSCOPE_API_KEY` 时用 API，否则本地哈希引擎（离线）
-- API 调用失败（欠费/网络）时**自动降级**为本地引擎
-- DashScope 默认模型 `text-embedding-v3`，OpenAI 默认 `text-embedding-3-small`
+## 当前实际支持
 
-#### 7. 🍎 打包 .app（GUI 独立应用）
+| 输入 | 可用输出 | 说明 |
+|---|---|---|
+| PDF | Markdown / HTML / TXT | 仅文本型 PDF；扫描件没有 OCR |
+| DOCX | Markdown / HTML / TXT | 依赖 pandoc |
+| XLSX | Markdown / HTML / TXT | 依赖 openpyxl/pandas |
+| Markdown | HTML / TXT / DOCX | 依赖 pandoc |
+| HTML / HTM | Markdown / TXT / DOCX | 会做正文清理 |
+| TXT | Markdown / HTML / DOCX | 依赖 pandoc |
+
+**暂不支持：** PPTX、EPUB、扫描版 PDF 的 OCR、PDF 导出。
+
+## 目录约定
+
+```text
+<vault>/
+  01-raw/
+    inbox/          # DocuFlow 默认投递位置
+```
+
+如果你的 vault 没有 `01-raw/inbox`，可以用 `--dest` 明确指定，DocuFlow 会创建目录。
+
+## 开发与测试
+
 ```bash
-./venv/bin/pip install pyinstaller
-./venv/bin/pyinstaller DocuFlow.spec --noconfirm
-# 产物: dist/DocuFlow.app（双击即用，需系统已安装 pandoc）
+pip install -r requirements-dev.txt
+pytest -q
 ```
 
-## 📦 系统要求（自动安装）
-- ✅ **macOS 10.15+**（自动检测）
-- ✅ **Homebrew**（自动安装）
-- ✅ **Python 3.8+**（自动配置）
-- ✅ **Pandoc**（自动安装）
-- ✅ **所有Python依赖**（自动安装）
+当前测试覆盖：核心转换、CLI、错误处理、HTML 清理、MarkItDown 集成、Obsidian vault 检测与投递。
 
-## 🎯 首次使用（1-3分钟）
-### 方式1：极速启动（推荐）
-1. **双击启动**：`DocuFlow-极速启动器.command`
-2. **等待安装**：首次使用自动安装依赖（1-2分钟）
-3. **开始使用**：安装完成后自动启动
+## 下一步
 
-### 方式2：创建桌面图标
-1. **双击创建**：`创建桌面快捷方式.command`
-2. **桌面图标**：在桌面找到DocuFlow图标
-3. **一键启动**：双击桌面图标即可启动
+1. 新 `ingest` 契约：frontmatter、内容哈希去重、原子写入、manifest、`--dry-run`、`--json`；
+2. 引擎：MarkItDown 扶正，复杂 PDF 用 Docling，扫描件检测 + OCR；
+3. 体验：GUI 合并动作、Finder 快捷动作、launchd watcher；
+4. 用 50 个真实文件验证可用率，再决定是否继续投入。
 
-## ⚡ 性能优化
-- **首次启动**：1-2分钟（安装依赖）
-- **后续启动**：2-3秒（极速启动）
-- **智能缓存**：自动跳过已安装的依赖
+## 历史
 
-## 🔍 故障排除
-
-#### 📋 日志文件
-- **详细日志**：`~/Desktop/DocuFlow_启动日志.txt`
-- **命令行日志**：`~/Documents/DocuFlow.log`
-
-#### 🛠️ 常见问题
-| 问题 | 解决方案 |
-|------|----------|
-| 网络超时 | 使用国内镜像源 |
-| 权限问题 | 使用`极速启动器` |
-| 依赖冲突 | 自动清理重装 |
-| 启动失败 | 查看详细日志 |
-
-#### 📞 技术支持
-1. **查看日志**：打开`~/Desktop/DocuFlow_启动日志.txt`
-2. **手动安装**：按日志提示操作
-3. **命令行测试**：`./venv/bin/python3 main_pyside.py`
-
-## 🎨 特色功能
-- 📁 **拖拽支持**：直接拖拽文件到界面
-- ⚙️ **批量处理**：支持文件夹批量转换
-- 🎯 **智能识别**：自动检测文件格式
-- 📊 **进度显示**：实时转换进度
-- 💾 **记忆功能**：记住上次使用的设置
-
-## 🔄 更新说明
-- **v1.3.0**：Obsidian 素材投递（ingest）、定位调整、通用能力标注
-- **v1.2.0**：Web 问答、RAG 模块、CI、.app 打包
-- **v1.1.0**：模块化重构、批量转换、测试套件（78 用例）
-- **v1.0**：基础文档转换功能（GUI/Web/CLI 三端）
+- v1.x 曾包含 Web 界面、RAG 问答、LLM Wiki 自动分类、桌面投递箱等；这些功能已在 v2.0 收缩中移除。
+- 变更记录见 [CHANGELOG.md](CHANGELOG.md)。

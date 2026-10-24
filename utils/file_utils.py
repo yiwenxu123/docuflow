@@ -5,31 +5,15 @@ DocuFlow - 文件处理工具函数
 """
 
 import os
-import mimetypes
 
-# 支持的文件格式
+from config import config
+
+# 单一事实来源：支持的格式与转换矩阵都来自 config
 SUPPORTED_FORMATS = {
-    '.docx': 'Microsoft Word文档',
-    '.md': 'Markdown文档',
-    '.pdf': 'PDF文档',
-    '.html': 'HTML文档',
-    '.htm': 'HTML文档',
-    '.epub': 'EPUB电子书',
-    '.xlsx': 'Excel表格',
-    '.xls': 'Excel表格'
+    ext: fmt.description
+    for ext, fmt in config.files.supported_input_formats.items()
 }
-
-# 格式转换支持矩阵
-CONVERSION_MATRIX = {
-    '.docx': ['.pdf', '.md', '.html', '.epub'],
-    '.md': ['.docx', '.pdf', '.html', '.epub'],
-    '.pdf': ['.docx', '.md', '.html'],
-    '.html': ['.md', '.docx', '.pdf', '.epub'],
-    '.htm': ['.md', '.docx', '.pdf', '.epub'],
-    '.epub': ['.md', '.pdf', '.docx', '.html'],
-    '.xlsx': ['.md', '.html', '.pdf'],
-    '.xls': ['.md', '.html', '.pdf']
-}
+CONVERSION_MATRIX = config.files.conversion_matrix
 
 def get_file_extension(file_path):
     """获取文件扩展名

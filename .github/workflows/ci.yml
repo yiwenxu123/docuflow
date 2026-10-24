@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Run tests
         run: python -m pytest tests/ -q
@@ -41,12 +41,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Compile check
         run: |
-          python -m compileall -q converter ui utils config.py cli.py kb_cli.py main_web.py main_pyside.py main_cli.py
+          python -m compileall -q converter ui utils config.py cli.py kb_cli.py main_pyside.py
 
       - name: Black check
         run: |
-          black --check --diff converter ui utils tests cli.py kb_cli.py main_web.py 2>/dev/null || echo "black 检查完成（未格式化的文件将列在上方）"
+          black --check --diff converter ui utils tests cli.py kb_cli.py 2>/dev/null || echo "black 检查完成（未格式化的文件将列在上方）"
