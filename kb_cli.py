@@ -197,7 +197,8 @@ def _move_unique(src: Path, folder: Path) -> Path:
 def _watch_candidates(box: Path) -> list:
     return sorted(
         p for p in box.iterdir()
-        if (p.is_file() or p.is_dir()) and not p.name.startswith(".")
+        if (p.is_file() or p.is_dir())
+        and not p.name.startswith((".", "_"))
     )
 
 

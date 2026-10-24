@@ -73,6 +73,19 @@ def test_watch_processes_folder(tmp_path):
     assert (vault / "01-raw" / "inbox" / "a.md").exists()
 
 
+def test_watch_ignores_archive_dirs(tmp_path):
+    box = tmp_path / "box"
+    (box / "_processed").mkdir(parents=True)
+    (box / "_failed").mkdir()
+    (box / "a.md").write_text("# A\n\n内容", encoding="utf-8")
+
+    result, box, vault = run_watch(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert (box / "_processed" / "a.md").exists()
+    assert (box / "_processed").is_dir()
+    assert (box / "_failed").is_dir()
+
+
 def test_watch_moves_unsupported_file(tmp_path):
     box = tmp_path / "box"
     box.mkdir()

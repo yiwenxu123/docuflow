@@ -34,6 +34,7 @@ import sys
 path, root, box, vault, interval = sys.argv[1:6]
 args = [
     f"{root}/venv/bin/python",
+    "-u",
     f"{root}/kb_cli.py",
     "watch",
     "--box", box,
@@ -43,10 +44,19 @@ if vault:
     args += ["--vault", vault]
 
 log = os.path.expanduser("~/Library/Logs/DocuFlow-watch.log")
+env = {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    "PYTHONUNBUFFERED": "1",
+}
+state_db = os.environ.get("DOCUFLOW_STATE_DB")
+if state_db:
+    env["DOCUFLOW_STATE_DB"] = state_db
+
 data = {
     "Label": "com.docuflow.watch",
     "ProgramArguments": args,
     "WorkingDirectory": root,
+    "EnvironmentVariables": env,
     "RunAtLoad": True,
     "KeepAlive": True,
     "ThrottleInterval": 10,

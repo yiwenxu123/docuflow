@@ -1,5 +1,8 @@
 #!/bin/bash
 # Finder Quick Action 的投递包装脚本
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+export PYTHONUNBUFFERED=1
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$ROOT/venv/bin/python"
 LOG="$HOME/Library/Logs/DocuFlow-finder.log"
