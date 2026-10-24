@@ -19,6 +19,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from converter.document_converter import DocumentConverter  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def isolate_docuflow_state(tmp_path, monkeypatch):
+    """避免测试写入用户真实的状态库"""
+    monkeypatch.setenv("DOCUFLOW_STATE_DB", str(tmp_path / "state.db"))
+
+
 SAMPLE_MD = """# 测试文档
 
 ## 二级标题
@@ -100,8 +107,7 @@ def sample_docx(tmp_path):
     md.write_text(SAMPLE_MD, encoding="utf-8")
     out = tmp_path / "sample.docx"
     result = subprocess.run(
-        ["pandoc", str(md), "-o", str(out)],
-        capture_output=True, text=True, timeout=60
+        ["pandoc", str(md), "-o", str(out)], capture_output=True, text=True, timeout=60
     )
     if result.returncode != 0:
         pytest.skip(f"pandoc 无法生成 docx: {result.stderr}")

@@ -1,42 +1,57 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-知识库管道（Knowledge Base Pipeline）
+知识库投递管道
 
-把文档集转换为 LLM/RAG 友好的结构化块（JSONL）：
-1. 批量转换：任意支持格式 → 干净 Markdown（复用 DocumentConverter / MarkItDown）
-2. 语义分块：按标题层级切分，保留标题上下文与相邻块重叠
-3. 输出：chunks.jsonl（每条含 source/title/text/元数据）+ 转换后的 Markdown 目录
+流程：
+1. 检测 Obsidian vault 与收件箱；
+2. 扫描文件并计算 source hash；
+3. 转换为 Markdown，计算 content hash；
+4. 去重、生成 frontmatter、原子写入；
+5. 记录 SQLite 状态并输出报告。
 
-典型用法：
-    from converter.kb_pipeline import KnowledgeBasePipeline
-    pipeline = KnowledgeBasePipeline()
-    pipeline.run("/path/to/sources", "/path/to/kb_out")
+不覆盖任何已有文件；同名冲突追加内容哈希后缀。
 """
 
-import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass, field
+import tempfile
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
+from config import config as app_config
+from converter.attachments import materialize_images
 from converter.document_converter import DocumentConverter
+from converter.ocr import needs_ocr, ocr_available, run_ocr
+from converter.frontmatter import (
+    detect_language,
+    extract_title,
+    merge_frontmatter,
+    render_frontmatter,
+    split_frontmatter,
+)
+from converter.state import StateStore, now_iso, sha256_file, sha256_text
 
-SUPPORTED_SOURCE_EXTS = {".md", ".markdown", ".txt", ".html", ".htm", ".pdf", ".docx", ".xlsx", ".xls"}
-
-DEFAULT_CHUNK_SIZE = 1500   # 每块目标字符数
-DEFAULT_CHUNK_OVERLAP = 150  # 相邻块重叠字符数
+SUPPORTED_SOURCE_EXTS = {
+    ".md",
+    ".markdown",
+    ".txt",
+    ".html",
+    ".htm",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+}
+MIN_HTML_CONTENT_CHARS = 40
 
 
 def detect_obsidian_vault() -> Optional[str]:
-    """检测当前打开的 Obsidian vault 路径
-
-    读取 Obsidian 的 obsidian.json，返回 open=true 的 vault；
-    无结果时返回第一个 vault。
-    """
-    obsidian_json = Path.home() / "Library" / "Application Support" / "obsidian" / "obsidian.json"
+    """检测当前打开的 Obsidian vault 路径"""
+    obsidian_json = (
+        Path.home() / "Library" / "Application Support" / "obsidian" / "obsidian.json"
+    )
     if not obsidian_json.exists():
         return None
     try:
@@ -54,422 +69,420 @@ def detect_obsidian_vault() -> Optional[str]:
     return None
 
 
-def detect_llmwiki_project() -> Optional[str]:
-    """检测 LLM Wiki 当前项目路径
-
-    从 LLM Wiki 应用配置（com.llmwiki.app/app-state.json）读取，
-    优先返回最近打开的项目。
-    """
-    state_path = (Path.home() / "Library" / "Application Support"
-                  / "com.llmwiki.app" / "app-state.json")
-    if not state_path.exists():
-        return None
-    try:
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-    # 优先最近打开的项目
-    recent = data.get("recentProjects") or []
-    for rp in recent:
-        path = rp.get("path")
-        if path and (Path(path) / ".llm-wiki").exists():
-            return path
-
-    # 回退：projectRegistry 中任一含 .llm-wiki 的项目
-    for proj in (data.get("projectRegistry") or {}).values():
-        path = proj.get("path")
-        if path and (Path(path) / ".llm-wiki").exists():
-            return path
-    return None
-
-
 def default_vault_dest(vault_dir: str) -> str:
-    """根据 vault 结构选择合适的素材接收目录"""
+    """优先使用 01-raw/inbox，不在 markitdown-output 之间隐式切换"""
     vault = Path(vault_dir)
-    candidates = [
-        "01-raw/markitdown-output",
-        "01-raw/inbox",
-        "01-raw",
-        "raw/sources",
-        "Inbox",
-    ]
+    candidates = ["01-raw/inbox", "01-raw", "raw/sources", "Inbox"]
     for rel in candidates:
         if (vault / rel).exists():
             return rel
-    return "01-raw/markitdown-output"
+    return "01-raw/inbox"
 
 
-def llmwiki_ingest_target(vault_dir: str, dest_subdir: str = "") -> str:
-    """LLM Wiki 项目的投递目标
-
-    默认投递到 raw/sources/inbox（LLM Wiki 会按 folderContext 自动归类），
-    也可显式指定 --dest 如 raw/sources/ai。
-    """
-    return dest_subdir or "raw/sources/inbox"
+def _sanitize_name(name: str) -> str:
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip(" .")
+    return cleaned[:80] or "document"
 
 
-# 文件名关键词 → raw/sources 分类（自动分类用）
-CLASSIFY_KEYWORDS = {
-    "ai": ["ai", "agent", "智能体", "大模型", "llm", "gpt", "claude", "deepseek", "prompt", "rag", "ai工具", "知识管理"],
-    "books": ["书", "book", "读书", "阅读", "读者", "名著"],
-    "writing": ["写作", "文案", "文笔", "妙笔", "稿", "公众号", "标题", "开头", "结尾"],
-    "methodology": ["方法论", "framework", "框架", "模式", "流程", "方法"],
-    "clippings": ["剪藏", "clip", "收藏"],
-    "evaluations": ["评估", "评价", "评测", "分析"],
-}
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+        raise
 
 
-def classify_source(filename: str) -> str:
-    """按文件名关键词自动分类
-
-    命中多个分类时取首个（关键词顺序即优先级）；
-    无命中返回 "inbox"（保守策略，交由 LLM Wiki 归类）。
-    """
-    name = filename.lower()
-    for category, keywords in CLASSIFY_KEYWORDS.items():
-        for kw in keywords:
-            if kw.lower() in name:
-                return category
-    return "inbox"
+def _normalize_text(text: str) -> str:
+    """轻量规范化：统一换行、压缩空行、去掉行尾空白，不删除正文内容"""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    normalized = "\n".join(line.rstrip() for line in normalized.splitlines())
+    return normalized.strip() + "\n"
 
 
-def auto_ingest_target(vault_dir: str, filename: str) -> str:
-    """LLM Wiki 项目投递目标：按文件名自动分类"""
-    return f"raw/sources/{classify_source(filename)}"
+def _file_hash(path: Path) -> str:
+    try:
+        return sha256_text(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return ""
 
 
-@dataclass
-class Chunk:
-    """单个知识库块"""
-    text: str
-    source: str            # 来源文件路径
-    title: str             # 文档标题
-    section_path: str      # 标题上下文路径，如 "架构 > 数据层"
-    index: int             # 块在文档内的序号
-    total: int             # 文档总块数
+def _pdf_pages(path: Path) -> Optional[int]:
+    if path.suffix.lower() != ".pdf":
+        return None
+    try:
+        from pypdf import PdfReader
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": hashlib.md5(f"{self.source}|{self.section_path}|{self.index}".encode()).hexdigest()[:12],
-            "source": self.source,
-            "title": self.title,
-            "section": self.section_path,
-            "chunk_index": self.index,
-            "total_chunks": self.total,
-            "char_count": len(self.text),
-            "text": self.text,
-        }
-
-
-_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
-
-
-def _heading_level(line: str) -> Optional[int]:
-    """返回标题层级（1-6），非标题行返回 None"""
-    m = _HEADING_RE.match(line.strip())
-    return len(m.group(1)) if m else None
-
-
-class KBChunker:
-    """Markdown 语义分块器
-
-    按标题层级把文档切成语义段；超长段再按段落递归切分，
-    块之间保留重叠字符，避免关键信息被切散。
-    """
-
-    def __init__(self, max_chars: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_CHUNK_OVERLAP):
-        if overlap >= max_chars:
-            raise ValueError("overlap 必须小于 max_chars")
-        self.max_chars = max_chars
-        self.overlap = overlap
-
-    def chunk_document(self, markdown: str, source: str = "", title: str = "") -> List[Chunk]:
-        """将一篇 Markdown 文档切分为块列表
-
-        Args:
-            markdown: Markdown 内容
-            source: 来源文件路径（用于元数据）
-            title: 文档标题（缺省时从首个 H1 提取）
-
-        Returns:
-            List[Chunk]: 块列表
-        """
-        if not markdown.strip():
-            return []
-
-        # 提取文档标题
-        if not title:
-            title = self._extract_title(markdown)
-
-        # 1. 按标题切分为语义段
-        sections = self._split_by_headings(markdown)
-
-        # 2. 将每个语义段进一步切分为块
-        chunks: List[Chunk] = []
-        for section_title, section_content in sections:
-            for piece in self._split_long_text(section_content):
-                chunks.append(Chunk(
-                    text=piece.strip(),
-                    source=source,
-                    title=title,
-                    section_path=section_title,
-                    index=len(chunks),
-                    total=0,  # 稍后回填
-                ))
-
-        total = len(chunks)
-        for i, c in enumerate(chunks):
-            c.index = i
-            c.total = total
-        return chunks
-
-    def chunk_document_file(self, md_path: str, source: str = "") -> List[Chunk]:
-        """从文件切分 Markdown 文档"""
-        p = Path(md_path)
-        with open(p, "r", encoding="utf-8") as f:
-            content = f.read()
-        return self.chunk_document(content, source=source or str(p), title=p.stem)
-
-    # ---- 内部实现 ----
-
-    def _extract_title(self, markdown: str) -> str:
-        for line in markdown.splitlines():
-            m = _HEADING_RE.match(line.strip())
-            if m and len(m.group(1)) == 1:
-                return m.group(2).strip()
-        return "Untitled"
-
-    def _split_by_headings(self, markdown: str) -> List[tuple]:
-        """按标题切分，返回 [(标题路径, 内容)] 列表"""
-        lines = markdown.splitlines()
-        sections: List[tuple] = []
-        # 标题栈，用于构造 "父标题 > 子标题" 路径
-        heading_stack: List[tuple] = []  # [(level, text)]
-
-        current_path = ""
-        current_lines: List[str] = []
-
-        def flush():
-            nonlocal current_lines, current_path
-            text = "\n".join(current_lines).strip()
-            if text:
-                sections.append((current_path, text))
-
-        for line in lines:
-            level = _heading_level(line)
-            if level is not None:
-                flush()
-                m = _HEADING_RE.match(line.strip())
-                if m is None:
-                    continue
-                text = m.group(2).strip()
-                # 弹出层级 >= 当前标题的祖先
-                while heading_stack and heading_stack[-1][0] >= level:
-                    heading_stack.pop()
-                heading_stack.append((level, text))
-                current_path = " > ".join(t for _, t in heading_stack)
-                current_lines = []
-            else:
-                current_lines.append(line)
-
-        flush()
-        return sections
-
-    def _split_long_text(self, text: str, section_prefix: str = "") -> List[str]:
-        """将超长文本切分为不超过 max_chars 的块，块间保留 overlap 字符"""
-        if len(text) <= self.max_chars:
-            return [text]
-
-        pieces: List[str] = []
-        remaining = text
-        while len(remaining) > self.max_chars:
-            cut = self._find_split_point(remaining[: self.max_chars])
-            piece = remaining[:cut]
-            pieces.append(piece)
-            start = max(0, cut - self.overlap)
-            remaining = remaining[start:]
-        if remaining.strip():
-            pieces.append(remaining)
-        return pieces
-
-    def _find_split_point(self, window: str) -> int:
-        """在窗口内寻找合适的切分点：优先段落边界，其次句号，最后硬切"""
-        # 优先：段落边界（最后一个 \n\n 之后）
-        para_break = window.rfind("\n\n")
-        if para_break > len(window) // 2:
-            return para_break + 2
-
-        # 其次：句号/问号/感叹号
-        for punct in ("。", "！", "？", ". ", "! ", "? ", "\n"):
-            idx = window.rfind(punct)
-            if idx > len(window) // 2:
-                return idx + len(punct)
-
-        # 最后：单词/字符边界硬切
-        return len(window)
+        return len(PdfReader(str(path)).pages)
+    except Exception:
+        return None
 
 
 class KnowledgeBasePipeline:
-    """知识库构建管道
+    """文档转换、去重并投递到 Obsidian vault"""
 
-    流程：扫描源目录 → 批量转换为干净 Markdown → 分块 → 输出 JSONL
-    """
-
-    def __init__(self, chunker: Optional[KBChunker] = None, converter: Optional[DocumentConverter] = None):
-        self.chunker = chunker or KBChunker()
+    def __init__(
+        self,
+        converter: Optional[DocumentConverter] = None,
+        state: Optional[StateStore] = None,
+    ):
         self.converter = converter or DocumentConverter()
+        self.state = state or StateStore()
 
-    def run(self, source_dir: str, output_dir: str, use_markitdown: bool = False) -> Dict[str, Any]:
-        """执行完整管道
-
-        Args:
-            source_dir: 源文档目录
-            output_dir: 输出目录（生成 md/ 与 chunks.jsonl）
-            use_markitdown: 优先使用 MarkItDown 转换
-
-        Returns:
-            统计信息 dict
-        """
-        out = Path(output_dir)
-        md_dir = out / "md"
-        md_dir.mkdir(parents=True, exist_ok=True)
-
-        files = self._discover_files(source_dir)
-        stats = {"total_files": len(files), "converted": 0, "failed": [], "chunks": 0}
-
-        all_chunks: List[Chunk] = []
-        for src in files:
-            try:
-                md_path = self._convert_one(src, md_dir, use_markitdown)
-                chunks = self.chunker.chunk_document_file(str(md_path), source=str(src))
-                all_chunks.extend(chunks)
-                stats["converted"] += 1
-            except Exception as e:
-                stats["failed"].append({"file": str(src), "error": str(e)})
-
-        # 写出 JSONL
-        jsonl_path = out / "chunks.jsonl"
-        with open(jsonl_path, "w", encoding="utf-8") as f:
-            for c in all_chunks:
-                f.write(json.dumps(c.to_dict(), ensure_ascii=False) + "\n")
-        stats["chunks"] = len(all_chunks)
-
-        # 写出摘要清单
-        manifest = {
-            "source_dir": str(Path(source_dir).resolve()),
-            "output_dir": str(out.resolve()),
-            "total_files": stats["total_files"],
-            "converted": stats["converted"],
-            "failed": stats["failed"],
-            "total_chunks": stats["chunks"],
-        }
-        with open(out / "manifest.json", "w", encoding="utf-8") as f:
-            json.dump(manifest, f, ensure_ascii=False, indent=2)
-
-        return stats
-
-    def ingest_auto(self, source_dir: str, vault_dir: str,
-                    use_markitdown: bool = False) -> Dict[str, Any]:
-        """按文件名自动分类投递到 LLM Wiki 素材库（raw/sources/<分类>/）
+    def ingest_to_vault(
+        self,
+        source: Union[str, List[str]],
+        vault_dir: str,
+        dest_subdir: str = "",
+        use_markitdown: bool = False,
+        dry_run: bool = False,
+        allow_duplicate: bool = False,
+        ocr_mode: str = "auto",
+        pdf_engine: str = "auto",
+    ) -> Dict[str, Any]:
+        """转换并投递文件或目录
 
         Args:
-            source_dir: 源文档文件或目录
-            vault_dir: LLM Wiki 项目路径
-            use_markitdown: 优先使用 MarkItDown 转换
-
-        Returns:
-            统计信息 dict
-        """
-        files = self._discover_files(source_dir)
-        converted, failed = [], []
-        output_dirs = set()
-        for src in files:
-            dest = auto_ingest_target(vault_dir, src.name)
-            target = Path(vault_dir) / dest
-            target.mkdir(parents=True, exist_ok=True)
-            try:
-                out = self._convert_one(src, target, use_markitdown)
-                converted.append(str(out))
-                output_dirs.add(dest)
-            except Exception as e:
-                failed.append({"file": str(src), "error": str(e)})
-
-        return {
-            "converted": converted,
-            "failed": failed,
-            "total_files": len(files),
-            "output_dir": str(Path(vault_dir) / "raw" / "sources"),
-            "dest_dirs": sorted(output_dirs),
-        }
-
-    def ingest_to_vault(self, source_dir: str, vault_dir: str,
-                        dest_subdir: str = "", use_markitdown: bool = False) -> Dict[str, Any]:
-        """将文档集转换为干净 Markdown 并投递到 Obsidian vault 的素材目录
-
-        Args:
-            source_dir: 源文档文件或目录
+            source: 源文件或目录
             vault_dir: Obsidian vault 路径
-            dest_subdir: vault 内的目标子目录；留空自动选择
-            use_markitdown: 优先使用 MarkItDown 转换
+            dest_subdir: vault 内目标子目录；留空自动选择
+            use_markitdown: 优先使用 MarkItDown
+            dry_run: 只预演，不写文件、不写状态
+            allow_duplicate: 跳过哈希去重（仍不会覆盖文件）
+            ocr_mode: auto（有 ocrmypdf 时自动 OCR）或 off（不 OCR）
+            pdf_engine: auto/pdfplumber（默认）或 markitdown
 
         Returns:
-            统计信息 dict（converted/failed/output_dir）
+            dict: converted / skipped / planned / failed / output_dir / run_id
         """
-        if not dest_subdir:
-            dest_subdir = default_vault_dest(vault_dir)
+        vault = Path(vault_dir).expanduser()
+        if not vault.is_dir():
+            raise FileNotFoundError(f"vault 路径不存在: {vault}")
 
-        target = Path(vault_dir) / dest_subdir
-        target.mkdir(parents=True, exist_ok=True)
+        dest_subdir = dest_subdir or default_vault_dest(str(vault))
+        dest_path = Path(dest_subdir)
+        if dest_path.is_absolute() or ".." in dest_path.parts:
+            raise ValueError("收件箱必须是 vault 内的相对路径")
+        target = vault / dest_subdir
+        if not dry_run:
+            target.mkdir(parents=True, exist_ok=True)
 
-        files = self._discover_files(source_dir)
-        converted, failed = [], []
+        files = self._discover_files(source)
+        run_id = None if dry_run else self.state.start_run()
+
+        converted: List[str] = []
+        skipped: List[Dict[str, str]] = []
+        planned: List[Dict[str, str]] = []
+        failed: List[Dict[str, str]] = []
+
         for src in files:
+            source_hash = ""
+            engine = self._engine_for(src, use_markitdown, pdf_engine)
             try:
-                out = self._convert_one(src, target, use_markitdown)
-                converted.append(str(out))
-            except Exception as e:
-                failed.append({"file": str(src), "error": str(e)})
+                source_hash = sha256_file(src)
 
-        return {
-            "converted": converted,
-            "failed": failed,
+                if not allow_duplicate:
+                    existing = self.state.find_success_by_source(source_hash)
+                    if existing and Path(existing["output_path"]).exists():
+                        skipped.append(
+                            {
+                                "file": str(src),
+                                "output": existing["output_path"],
+                                "reason": "source hash already ingested",
+                            }
+                        )
+                        continue
+
+                existing_frontmatter, body, engine = self._to_markdown(
+                    src, use_markitdown, ocr_mode, pdf_engine
+                )
+                ext = src.suffix.lower()
+                body_text = body.strip()
+                if not body_text:
+                    if ext in {".html", ".htm"}:
+                        raise ValueError(
+                            "未提取到正文（可能是 JS 渲染页面；请用浏览器剪藏）"
+                        )
+                    raise ValueError("转换结果为空")
+                if ext in {".html", ".htm"} and len(body_text) < MIN_HTML_CONTENT_CHARS:
+                    raise ValueError(
+                        f"正文过短（{len(body_text)} 字符，可能是 JS 页面或非文章页面）"
+                    )
+                content_hash = sha256_text(body)
+
+                if not allow_duplicate:
+                    existing = self.state.find_success_by_content(content_hash)
+                    if existing and Path(existing["output_path"]).exists():
+                        skipped.append(
+                            {
+                                "file": str(src),
+                                "output": existing["output_path"],
+                                "reason": "content hash already ingested",
+                            }
+                        )
+                        continue
+
+                base = self._output_base(src)
+                body, attachments_count = materialize_images(
+                    body,
+                    src,
+                    target,
+                    f"{base}-{content_hash[:6]}",
+                    dry_run=dry_run,
+                )
+                title = extract_title(body, src.stem)
+                meta = self._build_frontmatter(
+                    src,
+                    body,
+                    title,
+                    source_hash,
+                    content_hash,
+                    engine,
+                    attachments_count,
+                )
+                if existing_frontmatter is not None:
+                    final_text = merge_frontmatter(existing_frontmatter, meta) + body
+                else:
+                    final_text = render_frontmatter(meta) + body
+                final_hash = sha256_text(final_text)
+
+                final_path, identical = self._resolve_output_path(
+                    target, base, final_hash, allow_duplicate
+                )
+
+                if identical:
+                    if not dry_run:
+                        self.state.record_success(
+                            source_hash,
+                            content_hash,
+                            str(src.resolve()),
+                            str(final_path),
+                            title,
+                            f"docuflow {app_config.app.version}",
+                            engine,
+                        )
+                    skipped.append(
+                        {
+                            "file": str(src),
+                            "output": str(final_path),
+                            "reason": "identical file already exists",
+                        }
+                    )
+                    continue
+
+                if dry_run:
+                    planned.append({"file": str(src), "output": str(final_path)})
+                    continue
+
+                _atomic_write(final_path, final_text)
+                self.state.record_success(
+                    source_hash,
+                    content_hash,
+                    str(src.resolve()),
+                    str(final_path),
+                    title,
+                    f"docuflow {app_config.app.version}",
+                    engine,
+                )
+                converted.append(str(final_path))
+
+            except Exception as e:
+                error = str(e)
+                if not dry_run:
+                    self.state.record_failure(
+                        source_hash,
+                        "",
+                        str(src),
+                        error,
+                        f"docuflow {app_config.app.version}",
+                        engine,
+                    )
+                failed.append({"file": str(src), "error": error})
+
+        report: Dict[str, Any] = {
+            "run_id": run_id,
+            "vault": str(vault),
+            "dest": dest_subdir,
             "output_dir": str(target),
+            "dry_run": dry_run,
             "total_files": len(files),
+            "converted": converted,
+            "skipped": skipped,
+            "planned": planned,
+            "failed": failed,
         }
 
-    def _discover_files(self, source_dir: str) -> List[Path]:
-        root = Path(source_dir)
+        if run_id is not None:
+            stats = {
+                "total": len(files),
+                "converted": len(converted),
+                "skipped": len(skipped),
+                "failed": len(failed),
+            }
+            self.state.finish_run(run_id, stats, report)
+            report_path = self.state.write_report(run_id, report)
+            report["report_path"] = str(report_path)
+
+        return report
+
+    def _discover_files(self, source: Union[str, List[str]]) -> List[Path]:
+        if isinstance(source, (list, tuple)):
+            files: List[Path] = []
+            for item in source:
+                files.extend(self._discover_files(item))
+            return sorted(set(files))
+
+        root = Path(source).expanduser()
         if root.is_file():
             return [root] if root.suffix.lower() in SUPPORTED_SOURCE_EXTS else []
+        if not root.is_dir():
+            return []
         return sorted(
-            p for p in root.rglob("*")
+            p
+            for p in root.rglob("*")
             if p.is_file() and p.suffix.lower() in SUPPORTED_SOURCE_EXTS
         )
 
-    def _convert_one(self, src: Path, md_dir: Path, use_markitdown: bool) -> Path:
-        """转换单个文件为 Markdown，返回输出路径"""
-        # 非 Markdown 源文件带格式后缀命名，避免不同格式同名文件互相覆盖
-        ext = src.suffix.lstrip(".").lower()
-        if ext in {"md", "markdown", "txt"}:
-            out = md_dir / f"{src.stem}.md"
-        else:
-            out = md_dir / f"{src.stem}_{ext}.md"
+    def _to_markdown(
+        self,
+        src: Path,
+        use_markitdown: bool,
+        ocr_mode: str = "auto",
+        pdf_engine: str = "auto",
+    ) -> tuple:
+        if ocr_mode not in {"auto", "off"}:
+            raise ValueError(f"不支持的 OCR 模式: {ocr_mode}")
+        if pdf_engine not in {"auto", "pdfplumber", "markitdown"}:
+            raise ValueError(f"不支持的 PDF 引擎: {pdf_engine}")
 
-        # Markdown/TXT 源文件无需格式转换，直接清理内容
-        if ext in {"md", "markdown", "txt"}:
-            content = src.read_text(encoding="utf-8", errors="replace")
-            cleaned = self.converter._clean_content(
-                content=content,
-                content_type="markdown" if ext != "txt" else "text",
-                filter_images=True,
-                clean_content=True,
-            )
-            out.write_text(cleaned, encoding="utf-8")
-            return out
-
-        # 其余格式走转换器
-        result = self.converter.convert_file(
-            str(src), str(out), use_markitdown=use_markitdown
+        ext = src.suffix.lower()
+        markitdown_for_file = use_markitdown or (
+            ext == ".pdf" and pdf_engine == "markitdown"
         )
-        return Path(result)
+        engine = self._engine_for(src, use_markitdown, pdf_engine)
+
+        if ext in {".md", ".markdown", ".txt"}:
+            content = src.read_text(encoding="utf-8", errors="replace")
+            existing_frontmatter, content_body = split_frontmatter(content)
+            cleaned = _normalize_text(content_body)
+            return existing_frontmatter, cleaned, engine
+
+        if ext == ".pdf" and needs_ocr(src):
+            if ocr_mode == "off":
+                raise ValueError("扫描版 PDF 需要 OCR；已用 --ocr off 禁用")
+            if not ocr_available():
+                raise ValueError(
+                    "扫描版 PDF 需要 OCR；请安装 ocrmypdf 与 tesseract 语言包，"
+                    "或用 --ocr off 跳过"
+                )
+            with tempfile.TemporaryDirectory(prefix="docuflow_ocr_") as tmp_dir:
+                ocr_pdf = Path(tmp_dir) / "ocr.pdf"
+                run_ocr(src, ocr_pdf)
+                text = self._convert_to_text(ocr_pdf, markitdown_for_file)
+                actual_engine = self.converter.last_engine or engine
+                existing_frontmatter, body = split_frontmatter(text)
+                return existing_frontmatter, body, f"ocrmypdf+{actual_engine}"
+
+        text = self._convert_to_text(src, markitdown_for_file)
+        actual_engine = self.converter.last_engine or engine
+        existing_frontmatter, body = split_frontmatter(text)
+        return existing_frontmatter, body, actual_engine
+
+    def _convert_to_text(self, src: Path, use_markitdown: bool) -> str:
+        with tempfile.TemporaryDirectory(prefix="docuflow_convert_") as tmp_dir:
+            tmp_md = Path(tmp_dir) / "converted.md"
+            self.converter.convert_file(
+                str(src),
+                str(tmp_md),
+                use_markitdown=use_markitdown,
+                filter_images=False,
+            )
+            return tmp_md.read_text(encoding="utf-8", errors="replace")
+
+    def _output_base(self, src: Path) -> str:
+        ext = src.suffix.lstrip(".").lower()
+        base = src.stem if ext in {"md", "markdown", "txt"} else f"{src.stem}_{ext}"
+        return _sanitize_name(base)
+
+    def _resolve_output_path(
+        self,
+        target: Path,
+        base: str,
+        final_hash: str,
+        allow_duplicate: bool = False,
+    ) -> tuple:
+        candidate = target / f"{base}.md"
+        if not candidate.exists():
+            return candidate, False
+        if not allow_duplicate and _file_hash(candidate) == final_hash:
+            return candidate, True
+
+        candidate = target / f"{base}-{final_hash[:6]}.md"
+        counter = 2
+        while candidate.exists():
+            if not allow_duplicate and _file_hash(candidate) == final_hash:
+                return candidate, True
+            candidate = target / f"{base}-{final_hash[:6]}-{counter}.md"
+            counter += 1
+        return candidate, False
+
+    def _engine_for(
+        self, src: Path, use_markitdown: bool, pdf_engine: str = "auto"
+    ) -> str:
+        ext = src.suffix.lower()
+        if ext in {".md", ".markdown", ".txt"}:
+            return "builtin"
+        if ext == ".pdf" and pdf_engine == "markitdown":
+            return "markitdown"
+        if use_markitdown and self.converter.markitdown_integration.is_available():
+            return "markitdown"
+        return {
+            ".pdf": "pdfplumber",
+            ".xlsx": "openpyxl",
+            ".docx": "pandoc",
+            ".html": "pandoc",
+            ".htm": "pandoc",
+        }.get(ext, "pandoc")
+
+    def _build_frontmatter(
+        self,
+        src: Path,
+        body: str,
+        title: str,
+        source_hash: str,
+        content_hash: str,
+        engine: str,
+        attachments_count: int = 0,
+    ) -> Dict[str, Any]:
+        try:
+            captured_at = (
+                datetime.fromtimestamp(src.stat().st_mtime)
+                .astimezone()
+                .isoformat(timespec="seconds")
+            )
+        except OSError:
+            captured_at = None
+
+        return {
+            "title": title,
+            "source": str(src.resolve()),
+            "source_type": src.suffix.lstrip(".").lower(),
+            "captured_at": captured_at,
+            "converted_at": now_iso(),
+            "converter": f"docuflow {app_config.app.version}",
+            "engine": engine,
+            "source_hash": f"sha256:{source_hash}" if source_hash else None,
+            "content_hash": f"sha256:{content_hash}",
+            "language": detect_language(body),
+            "pages": _pdf_pages(src),
+            "attachments": attachments_count,
+        }

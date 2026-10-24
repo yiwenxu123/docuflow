@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Obsidian ingest 集成测试
+Obsidian 投递测试
 
-覆盖 vault 自动检测、目标目录选择与 ingest_to_vault 投递逻辑。
+覆盖 vault 自动检测、收件箱选择与 ingest_to_vault 投递逻辑。
 """
 
 import json
@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from converter.kb_pipeline import (
-    KnowledgeBasePipeline, default_vault_dest, detect_obsidian_vault,
-    detect_llmwiki_project, llmwiki_ingest_target,
-    classify_source, auto_ingest_target,
+    KnowledgeBasePipeline,
+    default_vault_dest,
+    detect_obsidian_vault,
 )
 
 
@@ -24,25 +24,34 @@ class TestVaultDetection:
     def test_detect_open_vault(self, tmp_path, monkeypatch):
         obsidian_dir = tmp_path / "Library" / "Application Support" / "obsidian"
         obsidian_dir.mkdir(parents=True)
-        (obsidian_dir / "obsidian.json").write_text(json.dumps({
-            "vaults": {
-                "1": {"path": "/vault/closed", "open": False},
-                "2": {"path": "/vault/active", "open": True},
-            }
-        }), encoding="utf-8")
+        (obsidian_dir / "obsidian.json").write_text(
+            json.dumps(
+                {
+                    "vaults": {
+                        "1": {"path": "/vault/closed", "open": False},
+                        "2": {"path": "/vault/active", "open": True},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
-        result = detect_obsidian_vault()
-        assert result == "/vault/active"
+        assert detect_obsidian_vault() == "/vault/active"
 
     def test_detect_fallback_first_vault(self, tmp_path, monkeypatch):
         obsidian_dir = tmp_path / "Library" / "Application Support" / "obsidian"
         obsidian_dir.mkdir(parents=True)
-        (obsidian_dir / "obsidian.json").write_text(json.dumps({
-            "vaults": {
-                "1": {"path": "/vault/a"},
-                "2": {"path": "/vault/b"},
-            }
-        }), encoding="utf-8")
+        (obsidian_dir / "obsidian.json").write_text(
+            json.dumps(
+                {
+                    "vaults": {
+                        "1": {"path": "/vault/a"},
+                        "2": {"path": "/vault/b"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
         assert detect_obsidian_vault() == "/vault/a"
 
@@ -52,118 +61,34 @@ class TestVaultDetection:
 
 
 class TestVaultDestSelection:
-    """目标子目录自动选择"""
+    """收件箱选择"""
 
-    def test_prefers_markitdown_output(self, tmp_path):
+    def test_prefers_inbox(self, tmp_path):
+        (tmp_path / "01-raw" / "inbox").mkdir(parents=True)
         (tmp_path / "01-raw" / "markitdown-output").mkdir(parents=True)
-        (tmp_path / "01-raw" / "inbox").mkdir(parents=True)
-        assert default_vault_dest(str(tmp_path)) == "01-raw/markitdown-output"
-
-    def test_prefers_inbox_when_no_markitdown(self, tmp_path):
-        (tmp_path / "01-raw" / "inbox").mkdir(parents=True)
         assert default_vault_dest(str(tmp_path)) == "01-raw/inbox"
 
-    def test_prefers_raw_sources_for_llm_wiki_vault(self, tmp_path):
+    def test_falls_back_to_01_raw(self, tmp_path):
+        (tmp_path / "01-raw").mkdir(parents=True)
+        assert default_vault_dest(str(tmp_path)) == "01-raw"
+
+    def test_falls_back_to_raw_sources(self, tmp_path):
         (tmp_path / "raw" / "sources").mkdir(parents=True)
         assert default_vault_dest(str(tmp_path)) == "raw/sources"
 
-    def test_fallback_default(self, tmp_path):
-        assert default_vault_dest(str(tmp_path)) == "01-raw/markitdown-output"
+    def test_default_is_inbox(self, tmp_path):
+        assert default_vault_dest(str(tmp_path)) == "01-raw/inbox"
 
 
-class TestLlmwikiDetection:
-    """LLM Wiki 项目检测与投递目标"""
-
-    def test_detect_project_from_recent(self, tmp_path, monkeypatch):
-        app_dir = tmp_path / "Library" / "Application Support" / "com.llmwiki.app"
-        app_dir.mkdir(parents=True)
-        project = tmp_path / "my-wiki"
-        (project / ".llm-wiki").mkdir(parents=True)
-        (app_dir / "app-state.json").write_text(json.dumps({
-            "recentProjects": [
-                {"path": str(project), "name": "my-wiki"},
-                {"path": "/old/project", "name": "old"},
-            ]
-        }), encoding="utf-8")
-        monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
-        assert detect_llmwiki_project() == str(project)
-
-    def test_detect_fallback_registry(self, tmp_path, monkeypatch):
-        app_dir = tmp_path / "Library" / "Application Support" / "com.llmwiki.app"
-        app_dir.mkdir(parents=True)
-        project = tmp_path / "wiki2"
-        (project / ".llm-wiki").mkdir(parents=True)
-        (app_dir / "app-state.json").write_text(json.dumps({
-            "recentProjects": [],
-            "projectRegistry": {"a": {"path": str(project)}},
-        }), encoding="utf-8")
-        monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
-        assert detect_llmwiki_project() == str(project)
-
-    def test_detect_none_when_no_config(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("converter.kb_pipeline.Path.home", lambda: tmp_path)
-        assert detect_llmwiki_project() is None
-
-    def test_ingest_target_default_inbox(self, tmp_path):
-        assert llmwiki_ingest_target(str(tmp_path)) == "raw/sources/inbox"
-
-    def test_ingest_target_custom(self, tmp_path):
-        assert llmwiki_ingest_target(str(tmp_path), "raw/sources/ai") == "raw/sources/ai"
-
-
-class TestAutoClassify:
-    """文件名自动分类"""
-
-    @pytest.mark.parametrize("filename,expected", [
-        ("AI_Agent上下文管理最佳实践.md", "ai"),
-        ("文案写作技巧汇总.md", "writing"),
-        ("方法论框架整理.md", "methodology"),
-        ("毛泽东传读书笔记.md", "books"),
-        ("deepseek入门指南.pdf", "ai"),
-        ("随便一个文件名.txt", "inbox"),
-        ("unknown.docx", "inbox"),
-    ])
-    def test_classify_source(self, filename, expected):
-        assert classify_source(filename) == expected
-
-    def test_auto_target(self, tmp_path):
-        assert auto_ingest_target(str(tmp_path), "AI报告.pdf") == "raw/sources/ai"
-        assert auto_ingest_target(str(tmp_path), "杂项.txt") == "raw/sources/inbox"
-
-
-class TestIngestAuto:
-    """自动分类投递"""
-
-    def test_ingest_auto_mixed(self, converter, sample_pdf, tmp_path):
-        vault = tmp_path / "llmwiki"
-        (vault / ".llm-wiki").mkdir(parents=True)
-        (vault / "raw" / "sources").mkdir(parents=True)
-
-        sources = tmp_path / "src"
-        sources.mkdir()
-        (sources / "AI调研报告.pdf").write_bytes(sample_pdf.read_bytes())
-        (sources / "文案笔记.md").write_text("# 文案\n\n写作技巧", encoding="utf-8")
-        (sources / "杂项.txt").write_text("杂项", encoding="utf-8")
-
-        pipeline = KnowledgeBasePipeline(converter=converter)
-        result = pipeline.ingest_auto(str(sources), str(vault))
-
-        assert result["total_files"] == 3
-        assert len(result["converted"]) == 3
-        assert result["dest_dirs"] == ["raw/sources/ai", "raw/sources/inbox", "raw/sources/writing"]
-        assert (vault / "raw" / "sources" / "ai" / "AI调研报告_pdf.md").exists()
-        assert (vault / "raw" / "sources" / "writing" / "文案笔记.md").exists()
-        assert (vault / "raw" / "sources" / "inbox" / "杂项.md").exists()
+@pytest.fixture
+def vault(tmp_path):
+    v = tmp_path / "vault"
+    (v / "01-raw" / "inbox").mkdir(parents=True)
+    return v
 
 
 class TestIngestToVault:
     """投递逻辑"""
-
-    @pytest.fixture
-    def vault(self, tmp_path):
-        v = tmp_path / "vault"
-        (v / "01-raw" / "markitdown-output").mkdir(parents=True)
-        return v
 
     def test_ingest_mixed_sources(self, converter, sample_md, sample_pdf, vault):
         sources = vault.parent / "sources"
@@ -181,12 +106,25 @@ class TestIngestToVault:
         assert (out_dir / "a.md").exists()
         assert (out_dir / "b_pdf.md").exists()
 
+    def test_rejects_absolute_dest(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        with pytest.raises(ValueError):
+            pipeline.ingest_to_vault(
+                str(sample_md), str(vault), dest_subdir="/tmp/outside"
+            )
+
+    def test_ingest_accepts_file_list(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault([str(sample_md)], str(vault))
+        assert result["total_files"] == 1
+        assert len(result["converted"]) == 1
+
     def test_ingest_custom_dest(self, converter, sample_md, vault):
         pipeline = KnowledgeBasePipeline(converter=converter)
         result = pipeline.ingest_to_vault(
             str(sample_md), str(vault), dest_subdir="01-raw/inbox"
         )
-        assert "01-raw" in result["output_dir"] and "inbox" in result["output_dir"]
+        assert result["output_dir"].endswith("01-raw/inbox")
         assert Path(result["output_dir"]).exists()
 
     def test_ingest_failed_file_reported(self, converter, vault, tmp_path):
@@ -200,3 +138,214 @@ class TestIngestToVault:
         assert len(result["converted"]) == 0
         assert len(result["failed"]) == 1
         assert "bad.docx" in result["failed"][0]["file"]
+
+
+class TestIngestContract:
+    """frontmatter 与去重契约"""
+
+    def test_frontmatter_and_dedupe(self, converter, vault, tmp_path):
+        src = tmp_path / "single"
+        src.mkdir()
+        doc = src / "doc.md"
+        doc.write_text("# 标题\n\n正文内容", encoding="utf-8")
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert len(first["converted"]) == 1
+
+        output = Path(first["converted"][0])
+        text = output.read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        assert "source_hash:" in text
+        assert "content_hash:" in text
+        assert 'title: "标题"' in text
+
+        second = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert second["converted"] == []
+        assert len(second["skipped"]) == 1
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 1
+
+    def test_markdown_content_not_overcleaned(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "note.md"
+        doc.write_text(
+            "# 标题\n\nCode 与 Share 都是正常词。\n\n![图](img.png)",
+            encoding="utf-8",
+        )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        text = Path(result["converted"][0]).read_text(encoding="utf-8")
+
+        assert "Code" in text
+        assert "Share" in text
+        assert "![图](img.png)" in text
+
+    def test_html_empty_fails_with_clear_reason(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "js.html"
+        doc.write_text(
+            "<html><body><div id='root'></div>"
+            "<script>console.log('app')</script></body></html>",
+            encoding="utf-8",
+        )
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert result["converted"] == []
+        assert len(result["failed"]) == 1
+        assert (
+            "正文" in result["failed"][0]["error"]
+            or "为空" in result["failed"][0]["error"]
+        )
+
+    def test_html_short_content_fails(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "short.html"
+        doc.write_text(
+            "<html><body><article><h1>Hi</h1></article></body></html>",
+            encoding="utf-8",
+        )
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert result["converted"] == []
+        assert len(result["failed"]) == 1
+        assert "正文" in result["failed"][0]["error"]
+
+    def test_pdf_engine_selection(self, converter, tmp_path):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        pdf = tmp_path / "a.pdf"
+        assert pipeline._engine_for(pdf, False, "markitdown") == "markitdown"
+        assert pipeline._engine_for(pdf, False, "auto") == "pdfplumber"
+
+    def test_html_uses_body_extraction(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "article.html"
+        doc.write_text(
+            "<html><body><article><h1>标题</h1>"
+            "<p>Code 与 Share 都是正常词。这是用于验证正文抽取的足够长的一段内容，"
+            "确保超过最低内容长度限制。</p></article></body></html>",
+            encoding="utf-8",
+        )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        text = Path(result["converted"][0]).read_text(encoding="utf-8")
+
+        assert 'engine: "trafilatura"' in text
+        assert "Code" in text
+        assert "Share" in text
+
+    def test_local_image_materialized(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "note.md"
+        doc.write_text("# 图\n\n![图](pic.png)", encoding="utf-8")
+        (src / "pic.png").write_bytes(b"fake-png-data")
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        output = Path(result["converted"][0])
+        text = output.read_text(encoding="utf-8")
+
+        assert "attachments/" in text
+        assert "attachments: 1" in text
+        attachments = list((vault / "01-raw" / "inbox" / "attachments").rglob("*.png"))
+        assert len(attachments) == 1
+
+    def test_existing_frontmatter_preserved(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "note.md"
+        doc.write_text(
+            "---\ntags:\n  - test\naliases:\n  - 别名\n---\n# 标题\n\n正文",
+            encoding="utf-8",
+        )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        text = Path(result["converted"][0]).read_text(encoding="utf-8")
+
+        assert text.startswith("---\n")
+        assert len([line for line in text.splitlines() if line.strip() == "---"]) == 2
+        assert "tags:" in text
+        assert "  - test" in text
+        assert "aliases:" in text
+        assert "docuflow:" in text
+        assert "  source_hash:" in text
+
+    def test_dry_run_does_not_write(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(sample_md), str(vault), dry_run=True)
+        assert result["converted"] == []
+        assert len(result["planned"]) == 1
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 0
+
+
+class TestNoOverwrite:
+    """同名文件不得覆盖"""
+
+    def test_collision_gets_hash_suffix(self, converter, tmp_path):
+        vault = tmp_path / "vault"
+        (vault / "01-raw" / "inbox").mkdir(parents=True)
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        (a / "same.md").write_text("# A\n\nfirst content", encoding="utf-8")
+        (b / "same.md").write_text("# B\n\nsecond content", encoding="utf-8")
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(a), str(vault))
+        first_path = Path(first["converted"][0])
+        first_text = first_path.read_text(encoding="utf-8")
+
+        second = pipeline.ingest_to_vault(str(b), str(vault))
+        second_path = Path(second["converted"][0])
+
+        assert second_path != first_path
+        assert first_path.read_text(encoding="utf-8") == first_text
+        assert second_path.exists()
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 2
+
+
+class TestAllowDuplicate:
+    """显式允许重复时生成副本，不覆盖"""
+
+    def test_allow_duplicate_creates_copy(self, converter, sample_md, vault):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(sample_md), str(vault))
+        second = pipeline.ingest_to_vault(
+            str(sample_md), str(vault), allow_duplicate=True
+        )
+        assert len(first["converted"]) == 1
+        assert len(second["converted"]) == 1
+        assert second["converted"][0] != first["converted"][0]
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 2
+
+
+class TestGateTwo:
+    """Gate 2：20 个文件二次投递全部跳过"""
+
+    def test_20_files_second_run_skips_all(self, converter, tmp_path):
+        vault = tmp_path / "vault"
+        (vault / "01-raw" / "inbox").mkdir(parents=True)
+        src = tmp_path / "src"
+        src.mkdir()
+        for i in range(20):
+            (src / f"doc{i:02d}.md").write_text(
+                f"# 文档 {i}\n\n这是第 {i} 篇内容。", encoding="utf-8"
+            )
+
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        first = pipeline.ingest_to_vault(str(src), str(vault))
+        assert len(first["converted"]) == 20
+        assert first["failed"] == []
+
+        second = pipeline.ingest_to_vault(str(src), str(vault))
+        assert second["converted"] == []
+        assert len(second["skipped"]) == 20
+        assert len(list((vault / "01-raw" / "inbox").glob("*.md"))) == 20

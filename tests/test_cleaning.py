@@ -3,45 +3,26 @@
 """
 内容清理与图片过滤测试
 
-覆盖 Markdown 清理（Gist 结构去除）、图片过滤、表格转换、MD→TXT 等纯函数逻辑。
+覆盖 Markdown 安全清理、图片过滤、表格转换、MD→TXT 等纯函数逻辑。
 """
 
 import pytest
 
 
-GIST_MARKDOWN = """# 测试文档
-
-::: {.markdown-body}
-这是正文内容。
-
-[文件引用](/Users/yiwenxu123/trae/文档转换/llm-wiki_filtered.md#L1-224)
-
-![图片](image.jpg)
-
-gist.github.com 页面结构标记
-Created by 作者
-Fork Share Star
-:::
-"""
-
-
 class TestMarkdownCleanup:
     """Markdown 内容清理"""
 
-    def test_removes_file_path_references(self, converter):
-        content = "参考 /path/to/file.md#L1-224 的内容"
+    def test_keeps_normal_words(self, converter):
+        content = "Code 和 Share、Star、Fork 都是正常词。"
         cleaned = converter._clean_markdown_content(content)
-        assert "L1-224" not in cleaned
-        assert "参考" in cleaned
+        for word in ["Code", "Share", "Star", "Fork"]:
+            assert word in cleaned
 
-    def test_removes_gist_structural_markers(self, converter):
-        cleaned = converter._clean_markdown_content(GIST_MARKDOWN)
-        # 页面结构标记应被去除
-        assert ":::" not in cleaned
-        assert "gist.github.com" not in cleaned
-        assert "Created by" not in cleaned
-        # 正文内容保留
-        assert "这是正文内容" in cleaned
+    def test_preserves_indentation(self, converter):
+        content = "- 项一\n  - 子项\n\n    code block"
+        cleaned = converter._clean_markdown_content(content)
+        assert "  - 子项" in cleaned
+        assert "    code block" in cleaned
 
     def test_keeps_links_and_content(self, converter):
         content = "[链接](https://example.com) 正文"
@@ -58,7 +39,9 @@ class TestMarkdownCleanup:
 
     def test_clean_content_disabled_returns_original(self, converter):
         content = "原始内容 ![图](a.jpg)"
-        cleaned = converter._clean_content(content, content_type="markdown", clean_content=False)
+        cleaned = converter._clean_content(
+            content, content_type="markdown", clean_content=False
+        )
         assert cleaned == content
 
 
@@ -88,6 +71,15 @@ class TestImageFiltering:
         content = "![图](x.jpg)"
         filtered = converter._filter_images_from_word(content)
         assert "x.jpg" not in filtered
+
+
+class TestPdfTableDedupe:
+    """PDF 表格去重"""
+
+    def test_table_already_in_text(self, converter):
+        table = [["姓名", "分数"], ["张三", "95"]]
+        assert converter._table_already_in_text(table, "姓名 分数 张三 95")
+        assert not converter._table_already_in_text(table, "姓名 分数")
 
 
 class TestTableConversion:

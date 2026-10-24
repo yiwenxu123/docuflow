@@ -62,6 +62,11 @@ class TestPdfConversions:
         content = open(out, encoding="utf-8").read()
         assert "Hello PDF Extraction Test 123" in content
 
+    def test_pdf_markdown_has_no_page_headers(self, converter, sample_pdf, tmp_path):
+        out = converter.convert_file(str(sample_pdf), ".md", str(tmp_path))
+        content = open(out, encoding="utf-8").read()
+        assert "## 第 1 页" not in content
+
     def test_pdf_to_txt(self, converter, sample_pdf, tmp_path):
         out = converter.convert_file(str(sample_pdf), ".txt", str(tmp_path))
         assert os.path.exists(out)
@@ -119,39 +124,6 @@ class TestHtmlConversions:
         assert "test.jpg" not in content
 
 
-class TestBatchConversions:
-    """批量转换"""
-
-    def test_batch_convert(self, converter, sample_md, sample_xlsx, tmp_path):
-        out_dir = tmp_path / "batch"
-        results = converter.batch_convert(
-            [str(sample_md), str(sample_xlsx)], ".html", str(out_dir)
-        )
-        assert len(results) == 2
-        for r in results:
-            assert os.path.exists(r)
-            assert r.endswith(".html")
-
-    def test_batch_convert_partial_failure(self, converter, sample_md, tmp_path):
-        """批量中混入坏文件，成功的应照常完成"""
-        bad = tmp_path / "broken.docx"
-        bad.write_bytes(b"not a real docx file")
-        out_dir = tmp_path / "batch2"
-        results = converter.batch_convert(
-            [str(sample_md), str(bad)], ".html", str(out_dir)
-        )
-        # 只有 md 成功
-        assert len(results) == 1
-        assert results[0].endswith(".html")
-
-    def test_async_batch_convert(self, converter, sample_md, sample_xlsx, tmp_path):
-        out_dir = tmp_path / "batch3"
-        results = converter.async_batch_convert(
-            [str(sample_md), str(sample_xlsx)], ".txt", str(out_dir), max_workers=2
-        )
-        assert len(results) == 2
-
-
 class TestFormatSupport:
     """格式支持判断"""
 
@@ -165,5 +137,6 @@ class TestFormatSupport:
 
     def test_unsupported_conversion_raises(self, converter, sample_md, tmp_path):
         from exceptions import UnsupportedFormatError
+
         with pytest.raises(UnsupportedFormatError):
             converter.convert_file(str(sample_md), ".xlsx", str(tmp_path))

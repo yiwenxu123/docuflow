@@ -12,10 +12,7 @@ a = Analysis(
     ['main_pyside.py'],
     pathex=[os.path.abspath('.')],
     binaries=[],
-    datas=[
-        ('templates', 'templates'),
-        ('static', 'static'),
-    ],
+    datas=[],
     hiddenimports=[
         'pypdf',
         'pdfplumber',
@@ -23,10 +20,12 @@ a = Analysis(
         'pandas',
         'pandas._libs.tslibs.timedeltas',
         'numpy',
+        'trafilatura',
+        'lxml',
     ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=['flask', 'werkzeug', 'matplotlib', 'reportlab'],
+    excludes=['matplotlib', 'reportlab'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -70,9 +69,9 @@ app = BUNDLE(
     bundle_identifier='com.docuflow.app',
     info_plist={
         'CFBundleName': 'DocuFlow',
-        'CFBundleDisplayName': 'DocuFlow 文档转换器',
-        'CFBundleShortVersionString': '1.2.0',
-        'CFBundleVersion': '1.2.0',
+        'CFBundleDisplayName': 'DocuFlow 知识库收件箱',
+        'CFBundleShortVersionString': '2.0.0',
+        'CFBundleVersion': '2.0.0',
         'NSHighResolutionCapable': True,
     },
 )

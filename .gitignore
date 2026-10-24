@@ -81,3 +81,6 @@ llm-wiki_*.md
 macOS安装指南.md
 clean_filtered_file.py
 temp/
+
+# Local archive (old logs, one-off artifacts, stale plans)
+archive/
