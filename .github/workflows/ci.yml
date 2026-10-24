@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**"]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -49,4 +50,4 @@ jobs:
 
       - name: Black check
         run: |
-          black --check --diff converter ui utils tests cli.py kb_cli.py 2>/dev/null || echo "black 检查完成（未格式化的文件将列在上方）"
+          black --check --diff converter ui utils tests cli.py kb_cli.py main_pyside.py
