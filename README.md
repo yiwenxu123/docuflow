@@ -228,6 +228,16 @@ pytest -q
 
 当前测试覆盖：核心转换、CLI、错误处理、HTML 正文抽取、MarkItDown、Obsidian 检测、frontmatter、状态库、去重、不覆盖、dry-run、图片附件、OCR 检测、watch 命令、20 文件二次投递。
 
+真实语料验证：
+
+```bash
+./venv/bin/python3 scripts/validate_corpus.py \
+  --manifest archive/phase5/manifest.txt \
+  --output archive/phase5/report
+```
+
+脚本使用临时 vault，不会写入真实知识库；报告输出到被忽略的 `archive/phase5/`。
+
 ## 下一步
 
 1. Phase 5：用 50 个真实文件验证可用率，再决定是否继续投入；

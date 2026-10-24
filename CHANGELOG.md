@@ -2,7 +2,33 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [Unreleased] - Phase 4 desktop integration
+## [Unreleased] - Phase 5 validation
+
+### 新增
+- `scripts/validate_corpus.py`：读取本地清单，用临时 vault 跑两轮投递，统计可用率、干净可用率、噪声、失败类型和幂等性
+- 验证报告写入被忽略的 `archive/phase5/`，不提交个人文件内容
+- 验证指标与失败分类测试；测试总数增加到 100 个
+
+### 验证结果（50 份真实文件）
+- 语料：15 PDF、10 DOCX、15 HTML、10 MD；本机没有真实 XLSX
+- 转换：47 成功、1 跳过、2 失败
+- 自动可用率：90%
+- 干净可用率（无页头/表格重复）：64%
+- 噪声：13 份 PDF（页头、表格重复）
+- 低内容：3 份 HTML（交互页/演示卡片，21–27 字符）
+- 失败：1 份损坏 DOCX（明确报错）、1 份 JS 渲染 HTML（空内容）
+- 二次投递：0 转换、48 跳过、2 失败，输出快照不变，幂等通过
+- PDF 对照：MarkItDown 13/13 可用、0 噪声，但标题层级为 0，部分文档内容减少；暂不替换默认引擎
+
+### 结论
+- Gate 5 条件通过：可用率达标，但“干净可用率”只有 64%，PDF 噪声尚未解决
+- 继续投入，但先做质量收口，不扩功能：
+  1. PDF 去掉页头、减少表格重复，并提供 MarkItDown/Docling 引擎选择；
+  2. HTML 低内容/JS 页面明确失败，避免把空壳当成功；
+  3. 补充真实 XLSX 语料；
+  4. 用已安装的 launchd 服务观察 2 周真实使用频率。
+
+## [2.0.0-phase4] - 2026-10-24
 
 ### 新增
 - GUI 合并为单一动作“转换并投递”：目标 vault、收件箱、OCR 策略、MarkItDown 选项、打开收件箱
@@ -18,9 +44,14 @@
 - GUI 移除独立“开始转换”按钮和输出格式设置；仅转换保留在 CLI
 - 测试增加到 96 个，全部通过
 
+### 修复（Phase 4.1）
+- watch 忽略 `_processed` / `_failed` / `_unsupported` 归档目录
+- launchd 与 Finder 显式设置 PATH，确保能找到 pandoc
+- launchd 使用 `python -u` 和 `PYTHONUNBUFFERED=1`，支持 `DOCUFLOW_STATE_DB`
+- 测试增加到 97 个，全部通过
+
 ### 已知限制
 - Finder Quick Action 安装后可能需要在系统设置中手动启用，或重启 Finder
-- launchd 安装脚本已验证 dry-run，未在本机实际加载常驻服务
 - OCR 执行路径仍未实测（未安装 ocrmypdf）
 - watch 只处理投递箱顶层文件和文件夹，不递归监听新增子目录
 
