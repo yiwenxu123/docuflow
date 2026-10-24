@@ -38,6 +38,7 @@ SUPPORTED_SOURCE_EXTS = {
     ".md", ".markdown", ".txt", ".html", ".htm",
     ".pdf", ".docx", ".xlsx",
 }
+MIN_HTML_CONTENT_CHARS = 40
 
 
 def detect_obsidian_vault() -> Optional[str]:
@@ -138,6 +139,7 @@ class KnowledgeBasePipeline:
         dry_run: bool = False,
         allow_duplicate: bool = False,
         ocr_mode: str = "auto",
+        pdf_engine: str = "auto",
     ) -> Dict[str, Any]:
         """转换并投递文件或目录
 
@@ -149,6 +151,7 @@ class KnowledgeBasePipeline:
             dry_run: 只预演，不写文件、不写状态
             allow_duplicate: 跳过哈希去重（仍不会覆盖文件）
             ocr_mode: auto（有 ocrmypdf 时自动 OCR）或 off（不 OCR）
+            pdf_engine: auto/pdfplumber（默认）或 markitdown
 
         Returns:
             dict: converted / skipped / planned / failed / output_dir / run_id
@@ -175,7 +178,7 @@ class KnowledgeBasePipeline:
 
         for src in files:
             source_hash = ""
-            engine = self._engine_for(src, use_markitdown)
+            engine = self._engine_for(src, use_markitdown, pdf_engine)
             try:
                 source_hash = sha256_file(src)
 
@@ -190,10 +193,20 @@ class KnowledgeBasePipeline:
                         continue
 
                 existing_frontmatter, body, engine = self._to_markdown(
-                    src, use_markitdown, ocr_mode
+                    src, use_markitdown, ocr_mode, pdf_engine
                 )
-                if not body.strip():
+                ext = src.suffix.lower()
+                body_text = body.strip()
+                if not body_text:
+                    if ext in {".html", ".htm"}:
+                        raise ValueError(
+                            "未提取到正文（可能是 JS 渲染页面；请用浏览器剪藏）"
+                        )
                     raise ValueError("转换结果为空")
+                if ext in {".html", ".htm"} and len(body_text) < MIN_HTML_CONTENT_CHARS:
+                    raise ValueError(
+                        f"正文过短（{len(body_text)} 字符，可能是 JS 页面或非文章页面）"
+                    )
                 content_hash = sha256_text(body)
 
                 if not allow_duplicate:
@@ -307,13 +320,22 @@ class KnowledgeBasePipeline:
         )
 
     def _to_markdown(
-        self, src: Path, use_markitdown: bool, ocr_mode: str = "auto"
+        self,
+        src: Path,
+        use_markitdown: bool,
+        ocr_mode: str = "auto",
+        pdf_engine: str = "auto",
     ) -> tuple:
         if ocr_mode not in {"auto", "off"}:
             raise ValueError(f"不支持的 OCR 模式: {ocr_mode}")
+        if pdf_engine not in {"auto", "pdfplumber", "markitdown"}:
+            raise ValueError(f"不支持的 PDF 引擎: {pdf_engine}")
 
         ext = src.suffix.lower()
-        engine = self._engine_for(src, use_markitdown)
+        markitdown_for_file = use_markitdown or (
+            ext == ".pdf" and pdf_engine == "markitdown"
+        )
+        engine = self._engine_for(src, use_markitdown, pdf_engine)
 
         if ext in {".md", ".markdown", ".txt"}:
             content = src.read_text(encoding="utf-8", errors="replace")
@@ -332,12 +354,12 @@ class KnowledgeBasePipeline:
             with tempfile.TemporaryDirectory(prefix="docuflow_ocr_") as tmp_dir:
                 ocr_pdf = Path(tmp_dir) / "ocr.pdf"
                 run_ocr(src, ocr_pdf)
-                text = self._convert_to_text(ocr_pdf, use_markitdown)
+                text = self._convert_to_text(ocr_pdf, markitdown_for_file)
                 actual_engine = self.converter.last_engine or engine
                 existing_frontmatter, body = split_frontmatter(text)
                 return existing_frontmatter, body, f"ocrmypdf+{actual_engine}"
 
-        text = self._convert_to_text(src, use_markitdown)
+        text = self._convert_to_text(src, markitdown_for_file)
         actual_engine = self.converter.last_engine or engine
         existing_frontmatter, body = split_frontmatter(text)
         return existing_frontmatter, body, actual_engine
@@ -380,10 +402,14 @@ class KnowledgeBasePipeline:
             counter += 1
         return candidate, False
 
-    def _engine_for(self, src: Path, use_markitdown: bool) -> str:
+    def _engine_for(
+        self, src: Path, use_markitdown: bool, pdf_engine: str = "auto"
+    ) -> str:
         ext = src.suffix.lower()
         if ext in {".md", ".markdown", ".txt"}:
             return "builtin"
+        if ext == ".pdf" and pdf_engine == "markitdown":
+            return "markitdown"
         if use_markitdown and self.converter.markitdown_integration.is_available():
             return "markitdown"
         return {

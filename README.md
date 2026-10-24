@@ -73,6 +73,9 @@ brew install ocrmypdf tesseract tesseract-lang
 
 # 扫描 PDF：默认 auto（有 ocrmypdf 就 OCR）；off 表示不 OCR
 ./venv/bin/python3 kb_cli.py ingest ~/Downloads/扫描件 --ocr off
+
+# PDF 引擎：默认 pdfplumber；markitdown 更干净但可能丢标题
+./venv/bin/python3 kb_cli.py ingest ~/Downloads/报告.pdf --pdf-engine markitdown
 ```
 
 投递规则：
@@ -106,7 +109,7 @@ GUI 只有一个主按钮“转换并投递”：
 
 - 选择目标 vault；
 - 确认收件箱（默认 `01-raw/inbox`）；
-- 选择 OCR 策略，可勾选 MarkItDown；
+- 选择 OCR 策略和 PDF 引擎，可勾选 MarkItDown；
 - 完成后可直接打开收件箱。
 
 GUI 不再提供“仅转换”入口；需要只转换时使用下面的 CLI。
@@ -195,7 +198,7 @@ attachments: 0
 | DOCX | Markdown / HTML / TXT | 依赖 pandoc |
 | XLSX | Markdown / HTML / TXT | 依赖 openpyxl/pandas |
 | Markdown | HTML / TXT / DOCX | 本地图片会落盘为附件 |
-| HTML / HTM | Markdown / TXT / DOCX | trafilatura 正文抽取；本地图片落盘 |
+| HTML / HTM | Markdown / TXT / DOCX | trafilatura 正文抽取；JS/空壳页面会明确失败 |
 | TXT | Markdown / HTML / DOCX | 依赖 pandoc |
 
 **暂不支持：** PPTX、EPUB、PDF 导出、PDF/DOCX 内嵌图片提取、远程图片下载。
@@ -237,6 +240,8 @@ pytest -q
 ```
 
 脚本使用临时 vault，不会写入真实知识库；报告输出到被忽略的 `archive/phase5/`。
+
+Phase 5.1 复跑同一 50 份语料：45 成功、5 失败（1 份损坏 DOCX + 4 份无正文 HTML），干净可用率 90%，噪声 0，二次投递幂等。
 
 ## 下一步
 

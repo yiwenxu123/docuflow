@@ -114,6 +114,8 @@ def classify_failure(error: str) -> str:
     text = error.lower()
     if "ocr" in text:
         return "ocr_needed"
+    if "正文过短" in error or "未提取到正文" in error:
+        return "html_no_content"
     if "转换结果为空" in error:
         return "empty_output"
     if "不支持" in error or "unsupported" in text:
@@ -126,7 +128,8 @@ def classify_failure(error: str) -> str:
 
 
 def run_pass(pipeline: KnowledgeBasePipeline, files: List[Path], vault: Path,
-             use_markitdown: bool, ocr_mode: str) -> List[Dict[str, Any]]:
+             use_markitdown: bool, ocr_mode: str,
+             pdf_engine: str = "auto") -> List[Dict[str, Any]]:
     results = []
     for path in files:
         start = time.perf_counter()
@@ -137,6 +140,7 @@ def run_pass(pipeline: KnowledgeBasePipeline, files: List[Path], vault: Path,
                 dest_subdir="01-raw/inbox",
                 use_markitdown=use_markitdown,
                 ocr_mode=ocr_mode,
+                pdf_engine=pdf_engine,
             )
             error = result["failed"][0]["error"] if result["failed"] else ""
             status = "failed" if result["failed"] else (
@@ -234,6 +238,9 @@ def main() -> int:
     parser.add_argument("--min-chars", type=int, default=40)
     parser.add_argument("--markitdown", action="store_true")
     parser.add_argument("--ocr", choices=["auto", "off"], default="auto")
+    parser.add_argument(
+        "--pdf-engine", choices=["auto", "pdfplumber", "markitdown"], default="auto"
+    )
     args = parser.parse_args()
 
     files = read_manifest(Path(args.manifest), args.limit)
@@ -255,9 +262,13 @@ def main() -> int:
             converter=DocumentConverter(), state=state
         )
 
-        first = run_pass(pipeline, files, vault, args.markitdown, args.ocr)
+        first = run_pass(
+            pipeline, files, vault, args.markitdown, args.ocr, args.pdf_engine
+        )
         before = snapshot(vault / "01-raw" / "inbox")
-        second = run_pass(pipeline, files, vault, args.markitdown, args.ocr)
+        second = run_pass(
+            pipeline, files, vault, args.markitdown, args.ocr, args.pdf_engine
+        )
         after = snapshot(vault / "01-raw" / "inbox")
 
         records = []
@@ -313,6 +324,7 @@ def main() -> int:
             "manifest": str(Path(args.manifest).resolve()),
             "markitdown": args.markitdown,
             "ocr_mode": args.ocr,
+            "pdf_engine": args.pdf_engine,
             "summary": {
                 "total": len(records),
                 "converted": converted,

@@ -71,6 +71,15 @@ class TestImageFiltering:
         assert "x.jpg" not in filtered
 
 
+class TestPdfTableDedupe:
+    """PDF 表格去重"""
+
+    def test_table_already_in_text(self, converter):
+        table = [["姓名", "分数"], ["张三", "95"]]
+        assert converter._table_already_in_text(table, "姓名 分数 张三 95")
+        assert not converter._table_already_in_text(table, "姓名 分数")
+
+
 class TestTableConversion:
     """表格 → Markdown"""
 

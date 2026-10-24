@@ -172,13 +172,49 @@ class TestIngestContract:
         assert "Share" in text
         assert "![图](img.png)" in text
 
+    def test_html_empty_fails_with_clear_reason(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "js.html"
+        doc.write_text(
+            "<html><body><div id='root'></div>"
+            "<script>console.log('app')</script></body></html>",
+            encoding="utf-8",
+        )
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert result["converted"] == []
+        assert len(result["failed"]) == 1
+        assert "正文" in result["failed"][0]["error"] or "为空" in result["failed"][0]["error"]
+
+    def test_html_short_content_fails(self, converter, vault, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        doc = src / "short.html"
+        doc.write_text(
+            "<html><body><article><h1>Hi</h1></article></body></html>",
+            encoding="utf-8",
+        )
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        result = pipeline.ingest_to_vault(str(doc), str(vault))
+        assert result["converted"] == []
+        assert len(result["failed"]) == 1
+        assert "正文" in result["failed"][0]["error"]
+
+    def test_pdf_engine_selection(self, converter, tmp_path):
+        pipeline = KnowledgeBasePipeline(converter=converter)
+        pdf = tmp_path / "a.pdf"
+        assert pipeline._engine_for(pdf, False, "markitdown") == "markitdown"
+        assert pipeline._engine_for(pdf, False, "auto") == "pdfplumber"
+
     def test_html_uses_body_extraction(self, converter, vault, tmp_path):
         src = tmp_path / "src"
         src.mkdir()
         doc = src / "article.html"
         doc.write_text(
             "<html><body><article><h1>标题</h1>"
-            "<p>Code 与 Share 都是正常词。</p></article></body></html>",
+            "<p>Code 与 Share 都是正常词。这是用于验证正文抽取的足够长的一段内容，"
+            "确保超过最低内容长度限制。</p></article></body></html>",
             encoding="utf-8",
         )
 

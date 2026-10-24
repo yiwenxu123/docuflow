@@ -63,40 +63,58 @@ class PdfProcessorMixin:
 
         raise ConversionError("所有PDF文本提取方法均失败", error_code="PDF_EXTRACTION_FAILED")
 
+    @staticmethod
+    def _table_already_in_text(table: List[List[Any]], text: str) -> bool:
+        """表格单元格已出现在正文中时跳过，避免页文本与表格重复"""
+        if not text.strip():
+            return False
+        normalized = re.sub(r"\s+", "", text).lower()
+        cells = []
+        for row in table:
+            for cell in row:
+                if cell is None:
+                    continue
+                value = re.sub(r"\s+", "", str(cell)).lower()
+                if len(value) >= 2:
+                    cells.append(value)
+        if not cells:
+            return True
+        return all(cell in normalized for cell in cells)
+
     def _extract_with_pdfplumber(self, pdf_path: Union[str, Path]) -> str:
         """使用pdfplumber从PDF中提取文本和表格。"""
         text_content = []
         with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
                 page_text = page.extract_text(x_tolerance=2, y_tolerance=2)
-                if page_text:
-                    cleaned_text = self._clean_pdf_text(page_text)
-                    if cleaned_text:
-                        text_content.append(f"## 第 {page_num} 页\n\n{cleaned_text}\n")
+                cleaned_text = self._clean_pdf_text(page_text) if page_text else ""
+                if cleaned_text:
+                    text_content.append(cleaned_text)
 
                 try:
                     tables = page.extract_tables()
-                    for i, table in enumerate(tables, 1):
-                        if table:
-                            markdown_table = self._convert_table_to_markdown(table)
-                            if markdown_table.strip():
-                                text_content.append(f"\n### 表格 {i}\n\n{markdown_table}\n")
+                    for table in tables:
+                        if not table or self._table_already_in_text(table, cleaned_text):
+                            continue
+                        markdown_table = self._convert_table_to_markdown(table)
+                        if markdown_table.strip():
+                            text_content.append(markdown_table)
                 except Exception as table_exc:
                     self.logger.warning(f"提取第 {page_num} 页的表格失败: {table_exc}")
-        return "\n".join(text_content)
+        return "\n\n".join(text_content)
 
     def _extract_with_pypdf2(self, pdf_path: Union[str, Path]) -> str:
         """使用PyPDF2从PDF中提取文本作为备用方法。"""
         text_content = []
         with open(pdf_path, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
-            for page_num, page in enumerate(pdf_reader.pages, 1):
+            for page in pdf_reader.pages:
                 page_text = page.extract_text()
                 if page_text:
                     cleaned_text = self._clean_pdf_text(page_text)
                     if cleaned_text:
-                        text_content.append(f"## 第 {page_num} 页\n\n{cleaned_text}\n")
-        return "\n".join(text_content)
+                        text_content.append(cleaned_text)
+        return "\n\n".join(text_content)
 
     def _clean_pdf_text(self, text: str) -> str:
         """清理PDF提取的文本
@@ -132,16 +150,6 @@ class PdfProcessorMixin:
 
         for broken, fixed in common_fixes.items():
             text = text.replace(broken, fixed)
-
-        # 处理其他常见的'n'分割问题（但要小心不要破坏正常的'n'）
-        # 只处理明显的单词内部'n'分割
-        text = re.sub(r'\b([a-zA-Z]{2,})n([a-zA-Z]{2,})\b', r'\1n\2', text)
-
-        # 将单独的'n'字符替换为空格（在单词边界处）
-        text = re.sub(r'\bn\b', ' ', text)
-
-        # 处理连续的'n'字符
-        text = re.sub(r'n{2,}', ' ', text)
 
         # 合并多个空格
         text = re.sub(r'[ \t]+', ' ', text)

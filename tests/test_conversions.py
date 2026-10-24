@@ -62,6 +62,11 @@ class TestPdfConversions:
         content = open(out, encoding="utf-8").read()
         assert "Hello PDF Extraction Test 123" in content
 
+    def test_pdf_markdown_has_no_page_headers(self, converter, sample_pdf, tmp_path):
+        out = converter.convert_file(str(sample_pdf), ".md", str(tmp_path))
+        content = open(out, encoding="utf-8").read()
+        assert "## 第 1 页" not in content
+
     def test_pdf_to_txt(self, converter, sample_pdf, tmp_path):
         out = converter.convert_file(str(sample_pdf), ".txt", str(tmp_path))
         assert os.path.exists(out)

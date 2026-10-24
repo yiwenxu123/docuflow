@@ -48,13 +48,16 @@ class IngestWorker(QObject):
     finished = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, files, vault_dir, dest_subdir, use_markitdown, ocr_mode):
+    def __init__(
+        self, files, vault_dir, dest_subdir, use_markitdown, ocr_mode, pdf_engine
+    ):
         super().__init__()
         self.files = files
         self.vault_dir = vault_dir
         self.dest_subdir = dest_subdir
         self.use_markitdown = use_markitdown
         self.ocr_mode = ocr_mode
+        self.pdf_engine = pdf_engine
 
     def run(self):
         from converter.kb_pipeline import KnowledgeBasePipeline
@@ -67,6 +70,7 @@ class IngestWorker(QObject):
                 dest_subdir=self.dest_subdir,
                 use_markitdown=self.use_markitdown,
                 ocr_mode=self.ocr_mode,
+                pdf_engine=self.pdf_engine,
             )
             self.finished.emit(result)
         except Exception as e:
@@ -143,6 +147,11 @@ class MainWindow(QMainWindow):
         self.ocr_combo.addItem("自动（安装了 ocrmypdf 就执行）", "auto")
         self.ocr_combo.addItem("关闭", "off")
         form.addRow("扫描 PDF OCR：", self.ocr_combo)
+
+        self.pdf_engine_combo = QComboBox()
+        self.pdf_engine_combo.addItem("自动（pdfplumber）", "auto")
+        self.pdf_engine_combo.addItem("MarkItDown（更干净，可能丢标题）", "markitdown")
+        form.addRow("PDF 引擎：", self.pdf_engine_combo)
 
         self.markitdown_check = QCheckBox("优先使用 MarkItDown")
         form.addRow("", self.markitdown_check)
@@ -287,6 +296,7 @@ class MainWindow(QMainWindow):
             dest,
             self.markitdown_check.isChecked(),
             self.ocr_combo.currentData(),
+            self.pdf_engine_combo.currentData(),
         )
         self.ingest_worker.moveToThread(self.ingest_thread)
         self.ingest_thread.started.connect(self.ingest_worker.run)

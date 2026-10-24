@@ -53,6 +53,7 @@ def cmd_ingest(args) -> int:
             dry_run=args.dry_run,
             allow_duplicate=args.allow_duplicate,
             ocr_mode=args.ocr,
+            pdf_engine=args.pdf_engine,
         )
     except Exception as e:
         print(f"投递失败: {e}", file=sys.stderr)
@@ -271,6 +272,7 @@ def cmd_watch(args) -> int:
                         dest_subdir=dest,
                         use_markitdown=args.markitdown,
                         ocr_mode=args.ocr,
+                        pdf_engine=args.pdf_engine,
                     )
                 except Exception as e:
                     result = {
@@ -325,6 +327,12 @@ def main() -> int:
         default="auto",
         help="扫描 PDF 的 OCR 策略（默认 auto：安装了 ocrmypdf 就自动执行）",
     )
+    p_ingest.add_argument(
+        "--pdf-engine",
+        choices=["auto", "pdfplumber", "markitdown"],
+        default="auto",
+        help="PDF 抽取引擎（默认 auto/pdfplumber；markitdown 更干净但可能丢标题）",
+    )
     p_ingest.add_argument("--json", action="store_true", help="输出 JSON 报告")
     p_ingest.set_defaults(func=cmd_ingest)
 
@@ -348,6 +356,12 @@ def main() -> int:
     p_watch.add_argument("--markitdown", action="store_true", help="优先使用 MarkItDown")
     p_watch.add_argument(
         "--ocr", choices=["auto", "off"], default="auto", help="扫描 PDF 的 OCR 策略"
+    )
+    p_watch.add_argument(
+        "--pdf-engine",
+        choices=["auto", "pdfplumber", "markitdown"],
+        default="auto",
+        help="PDF 抽取引擎",
     )
     p_watch.add_argument("--keep-originals", action="store_true", help="保留投递箱中的原文件")
     p_watch.add_argument("--once", action="store_true", help="只处理一轮后退出（调试/测试）")
